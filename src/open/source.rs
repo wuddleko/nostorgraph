@@ -2,48 +2,108 @@ use url::Url;
 
 use super::link::{Link, Target};
 
-pub(super) fn load(link: &Link) -> Result<String, Error> {
+#[derive(Debug)]
+pub(super) struct Loaded {
+    pub(super) event: String,
+    pub(super) locator: String,
+}
+
+pub(super) fn load(link: &Link) -> Result<Loaded, Error> {
     let config = crate::config::Config::load().map_err(Error::Config)?;
     load_with(&config, link)
 }
 
-fn load_with(config: &crate::config::Config, link: &Link) -> Result<String, Error> {
-    let Target::Long {
-        locator,
-        event_id,
-        relays,
-    } = &link.target
-    else {
-        return Err(Error::Shape);
-    };
-    if relays.is_empty() {
-        return Err(Error::Relays);
-    }
+fn load_with(config: &crate::config::Config, link: &Link) -> Result<Loaded, Error> {
     let socks = match config.socks_addr() {
         Ok(Some(addr)) => crate::nostr::RelaySocks::Proxy(addr),
         Ok(None) => crate::nostr::RelaySocks::Direct,
         Err(()) => return Err(Error::Socks),
     };
     crate::nostr::set_relay_socks(socks);
-    crate::nostr::fetch_sealed(
-        relays,
-        event_id,
-        locator,
+    match &link.target {
+        Target::Long {
+            locator,
+            event_id,
+            relays,
+        } => {
+            if relays.is_empty() {
+                return Err(Error::Relays);
+            }
+            let event = crate::nostr::fetch_sealed(
+                relays,
+                event_id,
+                locator,
+                config.limits.title_max_length,
+                config.limits.alias_max_length,
+                config.limits.content_max_length,
+                crate::relay_set::relay_timeout(config),
+            )
+            .ok_or(Error::Relays)?;
+            Ok(Loaded {
+                event,
+                locator: locator.clone(),
+            })
+        }
+        Target::Short { origin, locator } => fetch_host(config, socks, origin, locator, link),
+        Target::Title { origin, slug } => fetch_host(config, socks, origin, slug, link),
+    }
+}
+
+fn fetch_host(
+    config: &crate::config::Config,
+    socks: crate::nostr::RelaySocks,
+    origin: &str,
+    segment: &str,
+    link: &Link,
+) -> Result<Loaded, Error> {
+    if host_is_onion(origin) && !matches!(socks, crate::nostr::RelaySocks::Proxy(_)) {
+        return Err(Error::Fetch(
+            "An onion host needs [nostr].socks.".to_string(),
+        ));
+    }
+    let request = page_request(origin, segment);
+    let page = page_target(origin, segment);
+    let deadline = std::time::Instant::now() + crate::relay_set::relay_timeout(config);
+    let max_body = crate::seal::sealed_payload_max(
         config.limits.title_max_length,
         config.limits.alias_max_length,
         config.limits.content_max_length,
-        crate::relay_set::relay_timeout(config),
     )
-    .ok_or(Error::Relays)
+    .saturating_add(PAGE_SHELL);
+    let html = match crate::nostr::fetch_http_page(&page, &request, deadline, max_body, socks) {
+        Ok(html) => html,
+        Err(crate::nostr::PageError::TooLarge) => {
+            return Err(Error::Fetch("The page is too large.".to_string()));
+        }
+        Err(crate::nostr::PageError::Down) => {
+            return Err(Error::Fetch("The page did not respond.".to_string()));
+        }
+    };
+    let (event, locator) = event_from_page(link, &html, config)?;
+    Ok(Loaded { event, locator })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) fn page_request(origin: &str, segment: &str) -> String {
+const PAGE_SHELL: usize = 256 * 1024;
+
+fn host_is_onion(origin: &str) -> bool {
+    Url::parse(&format!("{origin}/"))
+        .ok()
+        .and_then(|url| url.host_str().map(|host| host.ends_with(".onion")))
+        .unwrap_or(false)
+}
+
+fn page_target(origin: &str, segment: &str) -> String {
     let mut url = Url::parse(&format!("{origin}/")).expect("page origin");
     url.path_segments_mut()
         .expect("page origin")
         .clear()
         .push(segment);
+    url.to_string()
+}
+
+pub(super) fn page_request(origin: &str, segment: &str) -> String {
+    let url = page_target(origin, segment);
+    let url = Url::parse(&url).expect("page origin");
     let host = host_header(&url).expect("page host");
     format!(
         "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n",
@@ -51,7 +111,6 @@ pub(super) fn page_request(origin: &str, segment: &str) -> String {
     )
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn host_header(url: &Url) -> Option<String> {
     let host = match url.host()? {
         url::Host::Domain(domain) => domain.to_string(),
@@ -64,7 +123,6 @@ fn host_header(url: &Url) -> Option<String> {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn read_marks(html: &str) -> Result<PageMarks, MarkError> {
     let events = element_text(html, "sealed-event").ok_or(MarkError::Event)?;
     let events: Vec<serde_json::Value> =
@@ -77,12 +135,11 @@ fn read_marks(html: &str) -> Result<PageMarks, MarkError> {
     Ok(PageMarks { events, locator })
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn event_from_page(
     link: &Link,
     html: &str,
     config: &crate::config::Config,
-) -> Result<String, Error> {
+) -> Result<(String, String), Error> {
     let marks = read_marks(html).map_err(|_| Error::Page)?;
     let wanted = match &link.target {
         Target::Short { locator, .. } => locator.clone(),
@@ -99,7 +156,8 @@ fn event_from_page(
             continue;
         };
         if locator == wanted {
-            return serde_json::to_string(event).map_err(|_| Error::Page);
+            let event = serde_json::to_string(event).map_err(|_| Error::Page)?;
+            return Ok((event, wanted));
         }
     }
     Err(Error::Page)
@@ -116,14 +174,12 @@ fn element_text<'a>(html: &'a str, id: &str) -> Option<&'a str> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct PageMarks {
     events: Vec<serde_json::Value>,
     locator: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(not(test), allow(dead_code))]
 enum MarkError {
     Event,
     Locator,
@@ -137,6 +193,7 @@ pub(super) enum Error {
     Relays,
     Shape,
     Page,
+    Fetch(String),
 }
 
 impl std::fmt::Display for Error {
@@ -149,6 +206,7 @@ impl std::fmt::Display for Error {
             Error::Relays => f.write_str("The relays did not return this note."),
             Error::Shape => f.write_str("That link is not a long link."),
             Error::Page => f.write_str("This page has no sealed note."),
+            Error::Fetch(message) => f.write_str(message),
         }
     }
 }
@@ -247,7 +305,9 @@ mod tests {
         let other = signed_event(OTHER, "nope");
         let array = serde_json::to_string(&vec![other, right.clone()]).expect("array");
         let short_page = format!(r#"<div id="sealed-event" hidden>{array}</div>"#);
-        let kept = event_from_page(&short_link(LOCATOR), &short_page, &config).expect("short");
+        let (kept, locator) =
+            event_from_page(&short_link(LOCATOR), &short_page, &config).expect("short");
+        assert_eq!(locator, LOCATOR);
         let kept: serde_json::Value = serde_json::from_str(&kept).expect("event");
         assert_eq!(kept["content"], right["content"]);
 
@@ -270,7 +330,8 @@ mod tests {
             r#"<div id="sealed-locator" hidden>{LOCATOR}</div><div id="sealed-event" hidden>{}</div>"#,
             serde_json::to_string(&vec![right]).expect("array")
         );
-        let kept = event_from_page(&title_link(), &title_page, &config).expect("title");
+        let (kept, locator) = event_from_page(&title_link(), &title_page, &config).expect("title");
+        assert_eq!(locator, LOCATOR);
         let kept: serde_json::Value = serde_json::from_str(&kept).expect("event");
         assert_eq!(kept["content"], content);
 
@@ -311,6 +372,91 @@ mod tests {
                 slug: "My Note".to_string(),
             },
         }
+    }
+
+    #[test]
+    fn an_onion_host_needs_the_proxy() {
+        let link = Link {
+            key: [0; nostorgraph_nip44::SECRET_LEN],
+            target: Target::Short {
+                origin: "http://example.onion".to_string(),
+                locator: "0123456789abcdef0123".to_string(),
+            },
+        };
+        let error = load_with(&Config::default(), &link).unwrap_err();
+        assert_eq!(error.to_string(), "An onion host needs [nostr].socks.");
+    }
+
+    #[test]
+    fn a_short_page_is_one_request_and_a_redirect_is_not_followed() {
+        let event = signed_event("0123456789abcdef0123", "from-page");
+        let body = format!(
+            r#"<div id="sealed-event" hidden>{}</div>"#,
+            serde_json::to_string(&vec![event.clone()]).expect("array")
+        );
+        let (origin, seen) = serve_once(200, &body);
+        let mut config = Config::default();
+        config.nostr.timeout_secs = 3;
+        let loaded = load_with(&config, &short_at(&origin)).expect("page");
+        assert_eq!(loaded.locator, "0123456789abcdef0123");
+        let kept: serde_json::Value = serde_json::from_str(&loaded.event).expect("event");
+        assert_eq!(kept["content"], event["content"]);
+        let request = seen
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("request");
+        assert!(request.starts_with("GET /0123456789abcdef0123 HTTP/1.1\r\n"));
+        assert!(!request.contains('#'));
+
+        let (origin, seen) = serve_once(302, "<p>moved</p>");
+        let error = load_with(&config, &short_at(&origin)).unwrap_err();
+        assert_eq!(error.to_string(), "This page has no sealed note.");
+        let request = seen
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("redirect request");
+        assert_eq!(request.matches("GET ").count(), 1);
+    }
+
+    fn short_at(origin: &str) -> Link {
+        Link {
+            key: [0; nostorgraph_nip44::SECRET_LEN],
+            target: Target::Short {
+                origin: origin.to_string(),
+                locator: "0123456789abcdef0123".to_string(),
+            },
+        }
+    }
+
+    fn serve_once(status: u16, body: &str) -> (String, std::sync::mpsc::Receiver<String>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("port").port();
+        let body = body.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().expect("accept");
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 1024];
+            loop {
+                match sock.read(&mut tmp) {
+                    Ok(0) => break,
+                    Ok(read) => {
+                        buf.extend_from_slice(&tmp[..read]);
+                        if buf.windows(4).any(|window| window == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
+            let response = format!(
+                "HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nConnection: close\r\nLocation: http://127.0.0.1/elsewhere\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = sock.write_all(response.as_bytes());
+        });
+        (format!("http://127.0.0.1:{port}"), rx)
     }
 
     #[test]

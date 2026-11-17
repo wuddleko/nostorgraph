@@ -12,7 +12,10 @@ use secp256k1::{Keypair, Message, XOnlyPublicKey, SECP256K1};
 
 mod assign;
 mod nip11;
+mod page_http;
 mod transport;
+
+pub(crate) use page_http::{fetch_http_page, PageError};
 
 use transport::{
     arm_stream, connect_relay, open_relay_socket, read_incoming, wait_budget, Incoming,

@@ -26,14 +26,11 @@ fn attempt(arguments: &[String]) -> Result<String, Failure> {
         });
     };
     let parsed = link::parse(input).map_err(link_message)?;
-    let event = source::load(&parsed).map_err(|error| failure(error.to_string()))?;
-    let link::Target::Long { locator, .. } = &parsed.target else {
-        return Err(failure("That link is not a long link.".to_string()));
-    };
-    let opened =
-        note::open(&event, &parsed.key, locator).map_err(|error| failure(error.to_string()))?;
+    let loaded = source::load(&parsed).map_err(|error| failure(error.to_string()))?;
+    let opened = note::open(&loaded.event, &parsed.key, &loaded.locator)
+        .map_err(|error| failure(error.to_string()))?;
     let page = document::render(&opened).map_err(failure)?;
-    let path = browse::open(locator, &page).map_err(|error| failure(error.to_string()))?;
+    let path = browse::open(&loaded.locator, &page).map_err(|error| failure(error.to_string()))?;
     Ok(path.display().to_string())
 }
 
