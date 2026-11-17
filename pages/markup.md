@@ -109,38 +109,25 @@ The same markup you type here is what the page renders.
 ## Media
 ### Images
 
+Paste or drop a picture while writing. The editor draws it again and puts that picture in the note. The markdown link is a short name. The file itself stays in the note, not in that link. Opening the note shows the picture without asking another server for it. Camera details that were stored in the original file are not kept. What the picture shows is still part of the note.
+
+Text in the brackets is a caption under the picture.
+
+A URL is not loaded with the note. It is a link, and the file is fetched only if the reader opens it:
+
 ```md
 ![Alt text](https://example.com/image.jpg)
 ```
-
-When you include alt text, it becomes a caption below the image.
-
-```md
-![](https://example.com/image.png)
-```
-
-Images without alt text display with no caption.
-
-Supported formats: .jpg, .jpeg, .png, .gif, .webp
+![Alt text](https://example.com/image.jpg)
 
 ### Videos
-Videos use the same syntax as images:
+
+A video URL is a link. The note does not load it.
 
 ```md
 ![Video caption](https://example.com/video.mp4)
 ```
 ![Video caption](https://example.com/video.mp4)
-
-When you include alt text, it becomes a centered caption below the video.
-
-```md
-![](https://example.com/video.webm)
-```
-![](https://example.com/video.webm)
-
-Videos without alt text display with no caption.
-
-Supported formats: .mp4, .webm, .ogg, .mov, .avi, .mkv
 
 ## Lists
 ### Bulleted Lists

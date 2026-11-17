@@ -7,13 +7,13 @@ generator: nostorgraph v0.2.8
 
 ## What This Service Does
 
-This service lets you publish text formatted with markup. The note is sealed and sent to Nostr relays. This host does not keep a copy of the writing. We do not host images, videos, or other files. When you include images or videos, you are linking to files hosted somewhere else.
+This service lets you publish text formatted with markup. The note is sealed and sent to Nostr relays. This host does not keep a copy of the writing. A picture pasted into the note is part of that sealed writing. A picture or video URL is a link, and opening the note does not load it. We do not keep a separate copy of images, videos, or other files.
 
 There are no accounts. Anyone with the link, including the key in it, can open the note. There is no private mode and no edit or delete after it is published.
 
 ## Privacy and Data Collection
 **For People Who Publish Content:**
-With JavaScript, your browser seals the note and this host sends the ciphertext to relays. Without JavaScript, this host seals it and then sends the ciphertext. Either way the host does not keep the writing, the title, or the alias. The key stays in the link. We do not use cookies for tracking or run analytics. We do not store images, videos, or other media you link to.
+With JavaScript, your browser seals the note and this host sends the ciphertext to relays. Without JavaScript, this host seals it and then sends the ciphertext. Either way the host does not keep the writing, the title, or the alias. The key stays in the link. We do not use cookies for tracking or run analytics. A pasted picture is inside the sealed note, not stored beside it.
 
 **For People Who Read Content:**
 Opening a note asks relays for the ciphertext. The host does not decrypt that ciphertext and does not keep it. The process can write a request log. A seal key that appears in a logged URL is redacted. The four site pages (about, legal, api, markup) are cached in memory. That cache is not a copy of published notes.
@@ -22,7 +22,7 @@ Opening a note asks relays for the ciphertext. The host does not decrypt that ci
 The home page without scripts is `/nojs`. The four site pages are `/nojs/about`, `/nojs/legal`, `/nojs/api`, and `/nojs/markup`. Those pages are rendered without client-side JavaScript. A sealed note opens in the browser. `/nojs/s/...` says to run locally and redirects to the source code.
 
 ## Important: Service Privacy Is Not Anonymity
-This service protects your privacy from us, but cannot protect your anonymity from others. Your writing creates a unique "fingerprint" through topics, style, word choices, idioms, sentence patterns, cultural references, and experiences. Additionally, metadata from files or websites you link to may contain identifying information. The service is not a magic bullet for anonymity - you are responsible for your own operational security.
+This service protects your privacy from us, but cannot protect your anonymity from others. Your writing creates a unique "fingerprint" through topics, style, word choices, idioms, sentence patterns, cultural references, and experiences. A picture can identify you by what it shows. A pasted picture is drawn again so the file's camera data is not kept. A link still points at someone else's file, and metadata from websites you link to may contain identifying information. The service is not a magic bullet for anonymity - you are responsible for your own operational security.
 
 To stay anonymous, vary your writing style between posts, avoid usual phrases, change sentence structures, be mindful of cultural references and topic combinations, and check metadata of linked content. Anyone can use any alias since there are no accounts, meaning impersonation is possible. These practices are your responsibility, not ours.
 
@@ -43,7 +43,7 @@ Neither age nor suitibility for age-specific audiences is checked. No ID surveil
 ## How We Handle Your Data
 The published note lives on the relays that accepted it, as ciphertext. This host does not keep a file of it, and there is no `.md` address for it. Relays can drop a note. We cannot promise it stays available, and we cannot edit or delete it after it is accepted.
 
-Since we do not host media files, we are not responsible when images or videos you linked become unavailable, change, or contain problematic content. Those files are controlled by whoever hosts them.
+A file you linked is controlled by whoever hosts it. We are not responsible when that file becomes unavailable, changes, or contains problematic content. Following the link tells that host the address of the browser that opened it.
 
 ## Service Limitations
 We provide this service "as-is" without any guarantees. We don't promise that the service will always work, that your content will be preserved forever, or that we won't need to shut down or change the service. We are not responsible for any problems that arise from your use of this service.
