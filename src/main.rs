@@ -124,8 +124,8 @@ fn content_security_policy() -> String {
      base-uri 'self'; \
      form-action 'self'; \
      frame-ancestors 'self'; \
-     img-src 'self' https: http: data:; \
-     media-src 'self' https: http:; \
+     img-src 'self' data:; \
+     media-src 'self'; \
      object-src 'none'; \
      script-src 'self' 'wasm-unsafe-eval'; \
      script-src-attr 'none'; \
@@ -153,6 +153,7 @@ fn render_options(config: &Config) -> parser::RenderOptions {
         max_url_length: config.security.max_url_length,
         external_link_security: config.security.external_link_security,
         syntax_theme: config.theme.syntax_highlighting.clone(),
+        images: std::collections::HashMap::new(),
     }
 }
 

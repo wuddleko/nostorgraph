@@ -601,7 +601,7 @@
             .article-content video {
                 max-width: 100%;
                 height: auto;
-                margin: 20px 0;
+                margin: 20px auto;
                 display: block;
             }
             .article-content .media-with-caption {
@@ -914,7 +914,7 @@
                 }
                 .article-content img,
                 .article-content video {
-                    margin: 16px 0;
+                    margin: 16px auto;
                 }
                 .article-content .media-with-caption {
                     margin: 16px 0;

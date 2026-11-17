@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
@@ -170,10 +171,12 @@ fn is_safe_url(url: &str) -> bool {
     true
 }
 
+#[derive(Clone)]
 pub struct RenderOptions {
     pub max_url_length: usize,
     pub external_link_security: bool,
     pub syntax_theme: String,
+    pub images: HashMap<String, String>,
 }
 
 impl Default for RenderOptions {
@@ -182,6 +185,7 @@ impl Default for RenderOptions {
             max_url_length: 4096,
             external_link_security: true,
             syntax_theme: "base16-ocean.dark".to_string(),
+            images: HashMap::new(),
         }
     }
 }
@@ -192,8 +196,10 @@ pub fn render_markdown(content: &str) -> String {
 }
 
 pub fn render_markdown_with_config(content: &str, config: &RenderOptions) -> String {
+    let (content, config) = note_with_images(content, config);
+    let config = &config;
     let marks = Marks::new();
-    let cleaned_content = remove_standalone_list_tags(content);
+    let cleaned_content = remove_standalone_list_tags(&content);
 
     let (protected_content, fenced_blocks) = extract_fenced_code_blocks(&cleaned_content, &marks);
     let (mut working_content, code_blocks) = extract_code_blocks(&protected_content, &marks);
@@ -228,7 +234,7 @@ pub fn render_markdown_with_config(content: &str, config: &RenderOptions) -> Str
     );
     working_content = restore_footnotes(&working_content, &marks);
 
-    finish_html(content, working_content, &marks)
+    finish_html(&content, working_content, &marks)
 }
 
 pub fn render_inline(content: &str) -> String {
@@ -236,8 +242,10 @@ pub fn render_inline(content: &str) -> String {
 }
 
 pub fn render_inline_with_config(content: &str, config: &RenderOptions) -> String {
+    let (content, config) = note_with_images(content, config);
+    let config = &config;
     let marks = Marks::new();
-    let cleaned_content = remove_standalone_list_tags(content);
+    let cleaned_content = remove_standalone_list_tags(&content);
     let (working_content, code_blocks) = extract_code_blocks(&cleaned_content, &marks);
     let (working_content_no_media, media_blocks) = extract_media_syntax(&working_content, &marks);
     let (working_content_no_links, link_blocks) =
@@ -247,7 +255,7 @@ pub fn render_inline_with_config(content: &str, config: &RenderOptions) -> Strin
         restore_media_and_links(&working_content, &media_blocks, &link_blocks, &marks);
     working_content = process_images_and_links(&working_content, config);
     working_content = restore_code_blocks(&working_content, &code_blocks, &marks);
-    finish_html(content, working_content, &marks)
+    finish_html(&content, working_content, &marks)
 }
 
 fn apply_emphasis(text: &str) -> String {
@@ -312,40 +320,144 @@ fn try_consume_image(
     let paren_end = find_ascii_until_newline(bytes, bracket_end + 2, b')')?;
     let alt_text = &text[i + 2..bracket_end];
     let image_url = &text[bracket_end + 2..paren_end];
-    if image_url.is_empty() || image_url.len() > config.max_url_length || !is_safe_url(image_url) {
+    if image_url.is_empty() {
         return None;
     }
-    push_image_html(result, alt_text, image_url);
+    // The link is the picture's name. The bytes were attached when the note was posted.
+    if let Some(data) = config.images.get(image_url).map(String::as_str) {
+        if embedded_image_url(data) {
+            push_image_html(result, alt_text, data);
+        }
+        return Some(paren_end + 1);
+    }
+    // A pasted picture is bytes inside the note. Opening it does not contact another host.
+    if embedded_image_url(image_url) {
+        push_image_html(result, alt_text, image_url);
+        return Some(paren_end + 1);
+    }
+    // A data URL that is not a picture stays text. A remote picture is a link:
+    // the browser fetches it only if the reader follows that link.
+    if is_data_url(image_url)
+        || image_url.len() > config.max_url_length
+        || !is_safe_url(image_url)
+    {
+        return None;
+    }
+    let label = if alt_text.trim().is_empty() {
+        image_url
+    } else {
+        alt_text
+    };
+    push_media_link(result, image_url, label, config.external_link_security);
     Some(paren_end + 1)
 }
 
 fn push_image_html(result: &mut String, alt_text: &str, image_url: &str) {
-    let is_video = is_video_url(image_url);
     if !alt_text.trim().is_empty() {
         result.push_str("<div class=\"media-with-caption\">");
-        push_media_tag(result, image_url, alt_text, is_video);
+        push_media_tag(result, image_url, alt_text);
         result.push_str("<div class=\"media-caption\">");
         push_html_escape(result, alt_text, false);
         result.push_str("</div></div>");
     } else {
-        push_media_tag(result, image_url, alt_text, is_video);
+        push_media_tag(result, image_url, alt_text);
     }
 }
 
-fn push_media_tag(result: &mut String, image_url: &str, alt_text: &str, is_video: bool) {
-    if is_video {
-        result.push_str("<video controls style=\"width: 100%;\"><source src=\"");
-        push_html_escape(result, image_url, false);
-        result.push_str("\" type=\"");
-        result.push_str(get_video_mime_type(image_url));
-        result.push_str("\">Your browser does not support the video tag.</video>");
+fn push_media_tag(result: &mut String, image_url: &str, alt_text: &str) {
+    result.push_str("<img src=\"");
+    push_html_escape(result, image_url, false);
+    result.push_str("\" alt=\"");
+    push_html_escape(result, alt_text, false);
+    result.push_str("\">");
+}
+
+fn push_media_link(result: &mut String, href: &str, text: &str, external: bool) {
+    result.push_str("<a href=\"");
+    push_html_escape(result, href, true);
+    if external {
+        result.push_str("\" target=\"_blank\">");
     } else {
-        result.push_str("<img src=\"");
-        push_html_escape(result, image_url, false);
-        result.push_str("\" alt=\"");
-        push_html_escape(result, alt_text, false);
         result.push_str("\">");
     }
+    push_html_escape(result, text, false);
+    result.push_str("</a>");
+}
+
+fn is_data_url(url: &str) -> bool {
+    url.len() >= 5 && url.as_bytes()[..5].eq_ignore_ascii_case(b"data:")
+}
+
+fn embedded_image_url(url: &str) -> bool {
+    const MAX_LEN: usize = 2_000_000;
+    if url.len() > MAX_LEN || url.bytes().any(|byte| byte.is_ascii_whitespace() || byte < 0x20) {
+        return false;
+    }
+    let Some((header, body)) = url.split_once(',') else {
+        return false;
+    };
+    if body.is_empty() || !body.bytes().all(is_base64_byte) {
+        return false;
+    }
+    matches!(
+        header.to_ascii_lowercase().as_str(),
+        "data:image/png;base64"
+            | "data:image/jpeg;base64"
+            | "data:image/jpg;base64"
+            | "data:image/gif;base64"
+            | "data:image/webp;base64"
+    )
+}
+
+fn note_image_key(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    (1..=120).contains(&bytes.len())
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':')
+        })
+}
+
+fn is_base64_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
+}
+
+fn note_with_images(content: &str, config: &RenderOptions) -> (String, RenderOptions) {
+    let (body, images) = detach_note_images(content);
+    let mut owned = config.clone();
+    if !images.is_empty() {
+        owned.images.extend(images);
+    }
+    (body, owned)
+}
+
+fn detach_note_images(content: &str) -> (String, HashMap<String, String>) {
+    const START: &str = "<!--ngimg\n";
+    const END: &str = "\n-->";
+    let Some(start) = content.rfind(START) else {
+        return (content.to_string(), HashMap::new());
+    };
+    if start > 0 && !content.as_bytes()[..start].ends_with(b"\n") {
+        return (content.to_string(), HashMap::new());
+    }
+    let rest = &content[start + START.len()..];
+    let Some(inner) = rest.strip_suffix(END) else {
+        return (content.to_string(), HashMap::new());
+    };
+    let mut images = HashMap::new();
+    for line in inner.split('\n') {
+        if line.is_empty() {
+            continue;
+        }
+        let Some((id, data)) = line.split_once(' ') else {
+            return (content.to_string(), HashMap::new());
+        };
+        if !note_image_key(id) || !embedded_image_url(data) {
+            return (content.to_string(), HashMap::new());
+        }
+        images.insert(id.to_string(), data.to_string());
+    }
+    let body = content[..start].trim_end_matches(['\n', '\r']);
+    (body.to_string(), images)
 }
 
 fn try_consume_link(
@@ -420,33 +532,6 @@ fn next_ascii_marker(bytes: &[u8], start: usize, first: u8, second: u8) -> usize
         i += 1;
     }
     i
-}
-
-fn is_video_url(url: &str) -> bool {
-    let video_extensions = ["mp4", "webm", "ogg", "mov", "avi", "mkv"];
-    let lower_url = url.to_lowercase();
-    video_extensions
-        .iter()
-        .any(|ext| lower_url.ends_with(&format!(".{}", ext)))
-}
-
-fn get_video_mime_type(url: &str) -> &'static str {
-    let lower_url = url.to_lowercase();
-    if lower_url.ends_with(".mp4") {
-        "video/mp4"
-    } else if lower_url.ends_with(".webm") {
-        "video/webm"
-    } else if lower_url.ends_with(".ogg") {
-        "video/ogg"
-    } else if lower_url.ends_with(".mov") {
-        "video/quicktime"
-    } else if lower_url.ends_with(".avi") {
-        "video/x-msvideo"
-    } else if lower_url.ends_with(".mkv") {
-        "video/x-matroska"
-    } else {
-        "video/mp4" // fallback
-    }
 }
 
 fn safe_replace(
@@ -538,6 +623,7 @@ fn html_cleaner() -> &'static ammonia::Builder<'static> {
             .add_tag_attributes("h3", &["id"])
             .add_tag_attributes("h4", &["id"])
             .add_tag_attributes("pre", &["class"])
+            .url_schemes(HashSet::from(["http", "https", "mailto", "data"]))
             .attribute_filter(keep_generated_ids)
             .link_rel(Some("noopener noreferrer"));
         builder
@@ -545,15 +631,20 @@ fn html_cleaner() -> &'static ammonia::Builder<'static> {
 }
 
 fn keep_generated_ids<'a>(
-    _element: &str,
+    element: &str,
     attribute: &str,
     value: &'a str,
 ) -> Option<std::borrow::Cow<'a, str>> {
     if attribute == "id" && !generated_id(value) {
-        None
-    } else {
-        Some(std::borrow::Cow::Borrowed(value))
+        return None;
     }
+    // A data URL is allowed only as a picture inside the note. A link must not
+    // carry one, and neither may a video or an SVG.
+    if is_data_url(value) && (attribute != "src" || element != "img" || !embedded_image_url(value))
+    {
+        return None;
+    }
+    Some(std::borrow::Cow::Borrowed(value))
 }
 
 fn generated_id(value: &str) -> bool {

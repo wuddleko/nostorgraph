@@ -364,6 +364,15 @@ function isSafeUrl(url, { allowDataImage = false } = {}) {
   return true;
 }
 function safeHref(url, opts = {}) { const raw = String(url ?? "").trim(); return raw === "" ? "" : isSafeUrl(raw, opts) ? raw : "#"; }
+function embeddedImageUrl(url) {
+  const raw = String(url ?? "");
+  if (!raw || raw.length > 2_000_000 || /[\u0000-\u001F\u007F\s]/.test(raw)) return false;
+  const comma = raw.indexOf(",");
+  if (comma < 0) return false;
+  const header = raw.slice(0, comma).toLowerCase();
+  if (!/^data:image\/(?:png|gif|jpe?g|webp);base64$/.test(header)) return false;
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(raw.slice(comma + 1));
+}
 function headingSlug(value) {
   const text = String(value ?? "")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -1312,10 +1321,17 @@ function renderInlineMarkdown(source, opts = {}) {
       || parseReferenceLinkAt(text, opts.references, i);
     if (!link) { linked += text[i]; continue; }
     if (link.bang) {
-      const safe = safeHref(link.url, { allowDataImage: false });
-      linked += (safe === "#" && String(link.url).trim() !== "#")
-        ? link.full
-        : reserve(`<img src="${escapeAttribute(safe)}" alt="${escapeAttribute(link.label)}"${link.title ? ` title="${escapeAttribute(link.title)}"` : ""}>`);
+      if (embeddedImageUrl(link.url)) {
+        linked += reserve(`<img src="${escapeAttribute(String(link.url).trim())}" alt="${escapeAttribute(link.label)}"${link.title ? ` title="${escapeAttribute(link.title)}"` : ""}>`);
+      } else {
+        const safe = safeHref(link.url);
+        const label = String(link.label ?? "");
+        const text = label.trim() ? label : String(link.url ?? "");
+        const target = opts.linkTarget === "_blank" ? " target=\"_blank\" rel=\"noopener noreferrer\"" : "";
+        linked += (safe === "#" && String(link.url).trim() !== "#")
+          ? link.full
+          : reserve(`<a href="${escapeAttribute(safe)}"${target}${link.title ? ` title="${escapeAttribute(link.title)}"` : ""}>${renderInlineMarkdown(text, opts)}</a>`);
+      }
     } else {
       const safe = safeHref(link.url);
       const target = opts.linkTarget === "_blank" ? " target=\"_blank\" rel=\"noopener noreferrer\"" : "";
@@ -1549,6 +1565,7 @@ export {
   isFenceLine,
   isCommentLine,
   loneImageMarkdown,
+  embeddedImageUrl,
   isInsideInlineCode,
   splitTableRow,
   isTableDelimiter,

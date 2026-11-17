@@ -32,7 +32,10 @@ fn csp_keeps_the_tab_on_this_host() {
     assert!(!policy.contains("wss:"));
     assert!(!policy.contains("damus.io"));
     assert!(policy.contains("default-src 'self'"));
-    assert!(policy.contains("img-src 'self' https: http: data:"));
+    assert!(policy.contains("img-src 'self' data:"));
+    assert!(policy.contains("media-src 'self';"));
+    assert!(!policy.contains("https:"));
+    assert!(!policy.contains("http:"));
     assert!(policy.contains("style-src 'self'"));
     assert!(!policy.contains("style-src 'self' https:"));
 }

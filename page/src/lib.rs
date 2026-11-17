@@ -86,6 +86,7 @@ pub fn render_markdown(
         max_url_length: max_url_length as usize,
         external_link_security,
         syntax_theme: syntax_theme.to_string(),
+        images: std::collections::HashMap::new(),
     };
     nostorgraph_parser::render_markdown_with_config(markdown, &options)
 }

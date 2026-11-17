@@ -990,33 +990,72 @@ fn strip_style_attrs(html: &str) -> String {
     out
 }
 
+const EMBEDDED_PIXEL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 #[test]
 fn test_media_embedding() {
-    // Test CommonMark image syntax
     let image_text = "![Alt text](https://example.com/image.jpg)";
     let image_result = render_markdown(image_text);
-    assert!(image_result.contains("<img src=\"https://example.com/image.jpg\" alt=\"Alt text\">"));
+    assert!(image_result.contains("<a href=\"https://example.com/image.jpg\""));
+    assert!(image_result.contains(">Alt text</a>"));
+    assert!(!image_result.contains("<img"));
 
-    // Test video syntax with caption
     let video_text = "![Video caption](https://example.com/video.mp4)";
     let video_result = render_markdown(video_text);
-    assert!(video_result.contains("<div class=\"media-with-caption\">"));
-    assert!(video_result.contains("<video controls"));
-    assert!(video_result.contains("<source src=\"https://example.com/video.mp4\""));
-    assert!(video_result.contains("<div class=\"media-caption\">Video caption</div>"));
+    assert!(video_result.contains("<a href=\"https://example.com/video.mp4\""));
+    assert!(video_result.contains(">Video caption</a>"));
+    assert!(!video_result.contains("<video"));
+    assert!(!video_result.contains("media-with-caption"));
 
-    // Test video without caption
     let video_no_caption = "![](https://example.com/video.webm)";
     let video_no_caption_result = render_markdown(video_no_caption);
-    assert!(video_no_caption_result.contains("<video controls"));
-    assert!(video_no_caption_result.contains("<source src=\"https://example.com/video.webm\""));
-    assert!(!video_no_caption_result.contains("<div class=\"media-caption\">"));
-    assert!(!video_no_caption_result.contains("<div class=\"media-with-caption\">"));
+    assert!(video_no_caption_result.contains("href=\"https://example.com/video.webm\""));
+    assert!(video_no_caption_result.contains(">https://example.com/video.webm</a>"));
+    assert!(!video_no_caption_result.contains("<video"));
 
-    // Test image with empty alt text
     let empty_alt = "![](https://example.com/test.png)";
     let empty_alt_result = render_markdown(empty_alt);
-    assert!(empty_alt_result.contains("<img src=\"https://example.com/test.png\" alt=\"\">"));
+    assert!(empty_alt_result.contains(">https://example.com/test.png</a>"));
+    assert!(!empty_alt_result.contains("<img"));
+
+    let embedded = format!("![Alt text]({EMBEDDED_PIXEL})");
+    let embedded_result = render_markdown(&embedded);
+    assert!(embedded_result.contains("<img "));
+    assert!(embedded_result.contains(EMBEDDED_PIXEL));
+    assert!(embedded_result.contains("<div class=\"media-caption\">Alt text</div>"));
+    assert!(!embedded_result.contains("<video"));
+
+    let short_limit = RenderOptions {
+        max_url_length: 12,
+        ..RenderOptions::default()
+    };
+    let still_embedded = render_markdown_with_config(&embedded, &short_limit);
+    assert!(still_embedded.contains("<img "));
+    assert!(still_embedded.contains(EMBEDDED_PIXEL));
+}
+
+#[test]
+fn a_picture_keeps_its_bytes_out_of_the_link() {
+    let note = format!("Hello\n\n![Shore](ngimg:ab)\n\n<!--ngimg\nngimg:ab {EMBEDDED_PIXEL}\n-->");
+    let result = render_markdown(&note);
+    assert!(result.contains("Hello"));
+    assert!(result.contains("<img "));
+    assert!(result.contains(EMBEDDED_PIXEL));
+    assert!(result.contains("Shore"));
+    assert!(!result.contains("<!--ngimg"));
+    assert!(!result.contains("ngimg:ab"));
+    assert!(!result.contains("<a "));
+
+    let missing = render_markdown("![Gone](ngimg:ff)");
+    assert!(!missing.contains("<img"));
+    assert!(!missing.contains("href="));
+
+    let named = format!("![shore.jpg](shore.jpg)\n\n<!--ngimg\nshore.jpg {EMBEDDED_PIXEL}\n-->");
+    let named_result = render_markdown(&named);
+    assert!(named_result.contains("<img "));
+    assert!(named_result.contains(EMBEDDED_PIXEL));
+    assert!(named_result.contains("shore.jpg"));
+    assert!(!named_result.contains("<!--ngimg"));
 }
 
 #[test]
@@ -1024,31 +1063,39 @@ fn test_commonmark_image_syntax() {
     // Test basic image syntax
     let basic = "![Alt text](https://example.com/image.jpg)";
     let basic_result = render_markdown(basic);
-    assert!(basic_result.contains("<img src=\"https://example.com/image.jpg\" alt=\"Alt text\">"));
+    assert!(basic_result.contains("<a href=\"https://example.com/image.jpg\""));
+    assert!(basic_result.contains(">Alt text</a>"));
+    assert!(!basic_result.contains("<img"));
 
     // Test image with special characters in alt text
     let special_alt = "![My \"special\" image & test](https://example.com/test.png)";
     let special_result = render_markdown(special_alt);
-    assert!(special_result.contains("alt=\"My &quot;special&quot; image &amp; test\""));
+    assert!(special_result.contains("href=\"https://example.com/test.png\""));
+    assert!(special_result.contains("&amp;"));
+    assert!(!special_result.contains("<img"));
 
     // Test image with special characters in URL (sanitizer handles escaping)
     let special_url = "![Test](https://example.com/test<>&.png)";
     let url_result = render_markdown(special_url);
-    assert!(url_result.contains("<img src="));
-    assert!(url_result.contains("alt=\"Test\""));
+    assert!(!url_result.contains("<img"));
+    assert!(url_result.contains(">Test</a>") || url_result.contains("Test"));
 
     // Test multiple images in one text
     let multiple = "![First](https://example.com/1.jpg) and ![Second](https://example.com/2.png)";
     let multiple_result = render_markdown(multiple);
-    assert!(multiple_result.contains("<img src=\"https://example.com/1.jpg\" alt=\"First\">"));
-    assert!(multiple_result.contains("<img src=\"https://example.com/2.png\" alt=\"Second\">"));
+    assert!(multiple_result.contains("href=\"https://example.com/1.jpg\""));
+    assert!(multiple_result.contains(">First</a>"));
+    assert!(multiple_result.contains("href=\"https://example.com/2.png\""));
+    assert!(multiple_result.contains(">Second</a>"));
+    assert!(!multiple_result.contains("<img"));
 
     // Test image mixed with text
     let mixed = "Here is an image: ![Cool pic](https://example.com/cool.jpg) - isn't it nice?";
     let mixed_result = render_markdown(mixed);
-    assert!(mixed_result.contains("<div class=\"media-with-caption\">"));
-    assert!(mixed_result.contains("<img src=\"https://example.com/cool.jpg\" alt=\"Cool pic\">"));
-    assert!(mixed_result.contains("<div class=\"media-caption\">Cool pic</div>"));
+    assert!(mixed_result.contains("href=\"https://example.com/cool.jpg\""));
+    assert!(mixed_result.contains(">Cool pic</a>"));
+    assert!(!mixed_result.contains("<img"));
+    assert!(!mixed_result.contains("media-with-caption"));
 
     // Test that incomplete syntax is not processed
     let incomplete1 = "![Alt text](no-closing-paren";
@@ -1062,55 +1109,51 @@ fn test_commonmark_image_syntax() {
     // Test that images are processed before links (so ![text](url) doesn't become a link)
     let not_link = "![This should be an image](https://example.com/image.jpg)";
     let not_link_result = render_markdown(not_link);
-    assert!(not_link_result.contains("<img"));
-    assert!(!not_link_result.contains("<a href"));
+    assert!(!not_link_result.contains("<img"));
+    assert!(not_link_result.contains("href=\"https://example.com/image.jpg\""));
+    assert!(not_link_result.contains(">This should be an image</a>"));
 }
 
 #[test]
 fn test_image_captions() {
-    // Test image with alt text shows caption
-    let with_alt = "![This is a caption](https://example.com/image.jpg)";
-    let with_alt_result = render_markdown(with_alt);
+    let with_alt = format!("![This is a caption]({EMBEDDED_PIXEL})");
+    let with_alt_result = render_markdown(&with_alt);
     assert!(with_alt_result.contains("<div class=\"media-with-caption\">"));
-    assert!(with_alt_result
-        .contains("<img src=\"https://example.com/image.jpg\" alt=\"This is a caption\">"));
+    assert!(with_alt_result.contains(EMBEDDED_PIXEL));
     assert!(with_alt_result.contains("<div class=\"media-caption\">This is a caption</div>"));
 
-    // Test image without alt text shows no caption
-    let no_alt = "![](https://example.com/image.jpg)";
-    let no_alt_result = render_markdown(no_alt);
-    assert!(no_alt_result.contains("<img src=\"https://example.com/image.jpg\" alt=\"\">"));
+    let no_alt = format!("![]({EMBEDDED_PIXEL})");
+    let no_alt_result = render_markdown(&no_alt);
+    assert!(no_alt_result.contains("<img "));
+    assert!(no_alt_result.contains("alt=\"\""));
     assert!(!no_alt_result.contains("<div class=\"media-caption\">"));
     assert!(!no_alt_result.contains("<div class=\"media-with-caption\">"));
 
-    // Test image with only whitespace alt text shows no caption
-    let whitespace_alt = "![   ](https://example.com/image.jpg)";
-    let whitespace_result = render_markdown(whitespace_alt);
-    assert!(whitespace_result.contains("<img src=\"https://example.com/image.jpg\" alt=\"   \">"));
+    let whitespace_alt = format!("![   ]({EMBEDDED_PIXEL})");
+    let whitespace_result = render_markdown(&whitespace_alt);
+    assert!(whitespace_result.contains("<img "));
     assert!(!whitespace_result.contains("<div class=\"media-caption\">"));
     assert!(!whitespace_result.contains("<div class=\"media-with-caption\">"));
 
-    // Test image with special characters in alt text
-    let special_alt = "![My \"special\" image & test](https://example.com/image.jpg)";
-    let special_result = render_markdown(special_alt);
-    assert!(special_result.contains("<div class=\"media-with-caption\">"));
-    assert!(special_result.contains("alt=\"My &quot;special&quot; image &amp; test\""));
-    assert!(special_result
-        .contains("<div class=\"media-caption\">My \"special\" image &amp; test</div>"));
+    let remote = "![My \"special\" image & test](https://example.com/image.jpg)";
+    let remote_result = render_markdown(remote);
+    assert!(remote_result.contains("href=\"https://example.com/image.jpg\""));
+    assert!(remote_result.contains("&amp;"));
+    assert!(!remote_result.contains("<img"));
+    assert!(!remote_result.contains("media-caption"));
 
-    // Test multiple images with different alt text scenarios
-    let multiple = "![First caption](img1.jpg) ![](img2.jpg) ![Third caption](img3.jpg)";
-    let multiple_result = render_markdown(multiple);
+    let multiple = format!(
+        "![First caption]({EMBEDDED_PIXEL}) ![]({EMBEDDED_PIXEL}) ![Third caption]({EMBEDDED_PIXEL})"
+    );
+    let multiple_result = render_markdown(&multiple);
     assert!(multiple_result.contains("<div class=\"media-caption\">First caption</div>"));
     assert!(multiple_result.contains("<div class=\"media-caption\">Third caption</div>"));
-    // Count caption occurrences - should be exactly 2
     assert_eq!(
         multiple_result
             .matches("<div class=\"media-caption\">")
             .count(),
         2
     );
-    // Count wrapper occurrences - should be exactly 2 (only images with alt text)
     assert_eq!(
         multiple_result
             .matches("<div class=\"media-with-caption\">")
@@ -1126,29 +1169,25 @@ fn test_image_captions_demo() {
 # Image Caption Demo
 
 Here's an image with alt text that becomes a caption:
-![A beautiful sunset over the mountains](https://example.com/sunset.jpg)
+![A beautiful sunset over the mountains](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)
 
-And here's an image without alt text (no caption):
+And here's a remote picture, which stays a link:
 ![](https://example.com/no-caption.jpg)
 
-Multiple images:
-![First image](img1.jpg) ![Second image](img2.jpg)
+Multiple pictures in the note:
+![First image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==) ![Second image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)
 "#;
 
     let result = render_markdown(demo_text);
 
-    // Should have captions for images with alt text
     assert!(result.contains("<div class=\"media-with-caption\">"));
     assert!(
         result.contains("<div class=\"media-caption\">A beautiful sunset over the mountains</div>")
     );
     assert!(result.contains("<div class=\"media-caption\">First image</div>"));
     assert!(result.contains("<div class=\"media-caption\">Second image</div>"));
-
-    // Should have regular img for image without alt text
-    assert!(result.contains("<img src=\"https://example.com/no-caption.jpg\" alt=\"\">"));
-
-    // Verify we have the right number of captions (3 images with alt text)
+    assert!(result.contains("href=\"https://example.com/no-caption.jpg\""));
+    assert!(!result.contains("<img src=\"https://"));
     assert_eq!(result.matches("<div class=\"media-caption\">").count(), 3);
     assert_eq!(
         result.matches("<div class=\"media-with-caption\">").count(),
@@ -1172,17 +1211,17 @@ fn test_html_escape_function() {
 #[test]
 fn test_image_alt_text_sanitization() {
     // Test that malicious alt text is properly sanitized in both alt attribute and caption
-    let malicious_alt = r#"![<script>alert('xss')</script>](https://example.com/image.jpg)"#;
-    let result = render_markdown(malicious_alt);
+    let malicious_alt = format!("![<script>alert('xss')</script>]({EMBEDDED_PIXEL})");
+    let result = render_markdown(&malicious_alt);
 
-    // The caption should be properly escaped
     assert!(result.contains("<div class=\"media-with-caption\">"));
-    assert!(result
-        .contains("<div class=\"media-caption\">&lt;script&gt;alert('xss')&lt;/script&gt;</div>"));
+    assert!(result.contains("&lt;script&gt;"));
+    assert!(!result.contains("<script"));
 
-    // Test with various dangerous characters
-    let complex_alt = r#"![<img src=x onerror=alert(1)> & "quotes"](test.jpg)"#;
-    let complex_result = render_markdown(complex_alt);
+    let complex_alt = format!(
+        "![<img src=x onerror=alert(1)> & \"quotes\"]({EMBEDDED_PIXEL})"
+    );
+    let complex_result = render_markdown(&complex_alt);
 
     // The caption content should be escaped (main security concern)
     assert!(complex_result.contains("&lt;img"));
@@ -1195,33 +1234,27 @@ fn test_image_captions_final_demo() {
     // Final demonstration of the image caption feature
     let input = r#"
 Check out this image with a caption:
-![A beautiful landscape with mountains and trees](https://example.com/landscape.jpg)
+![A beautiful landscape with mountains and trees](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)
 
-And this one without alt text (no caption):
+And this remote one, which is a link:
 ![](https://example.com/no-alt.jpg)
 
-Multiple images:
-![First image](img1.jpg) and ![Second image](img2.jpg)
+Multiple pictures:
+![First image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==) and ![Second image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)
 "#;
 
     let result = render_markdown(input);
 
-    // Image with alt text gets a caption
     assert!(result.contains("<div class=\"media-with-caption\">"));
-    assert!(result.contains("<img src=\"https://example.com/landscape.jpg\" alt=\"A beautiful landscape with mountains and trees\">"));
+    assert!(result.contains(EMBEDDED_PIXEL));
     assert!(result.contains(
         "<div class=\"media-caption\">A beautiful landscape with mountains and trees</div>"
     ));
-
-    // Image without alt text gets no caption
-    assert!(result.contains("<img src=\"https://example.com/no-alt.jpg\" alt=\"\">"));
+    assert!(result.contains("href=\"https://example.com/no-alt.jpg\""));
+    assert!(!result.contains("<img src=\"https://"));
     assert!(!result.contains("<div class=\"media-caption\"></div>"));
-
-    // Multiple images with captions
     assert!(result.contains("<div class=\"media-caption\">First image</div>"));
     assert!(result.contains("<div class=\"media-caption\">Second image</div>"));
-
-    // Verify caption count
     assert_eq!(result.matches("<div class=\"media-caption\">").count(), 3);
     assert_eq!(
         result.matches("<div class=\"media-with-caption\">").count(),
@@ -1232,20 +1265,24 @@ Multiple images:
 #[test]
 fn test_image_caption_html_structure() {
     // Test the exact HTML structure produced
-    let input = "![Test caption](image.jpg)";
-    let result = render_markdown(input);
+    let input = format!("![Test caption]({EMBEDDED_PIXEL})");
+    let result = render_markdown(&input);
 
-    // Should produce the wrapper div with both image and caption inside
     assert!(result.contains("<div class=\"media-with-caption\">"));
-    assert!(result.contains("<img src=\"image.jpg\" alt=\"Test caption\">"));
+    assert!(result.contains(&format!("<img src=\"{EMBEDDED_PIXEL}\" alt=\"Test caption\">")));
     assert!(result.contains("<div class=\"media-caption\">Test caption</div>"));
-    assert!(result.contains("</div></div>")); // Both closing divs
+    assert!(result.contains("</div></div>"));
 
-    // Test image without caption
-    let no_caption = "![](image.jpg)";
-    let no_caption_result = render_markdown(no_caption);
+    let no_caption = format!("![]({EMBEDDED_PIXEL})");
+    let no_caption_result = render_markdown(&no_caption);
     assert!(!no_caption_result.contains("media-with-caption"));
-    assert!(no_caption_result.contains("<img src=\"image.jpg\" alt=\"\">"));
+    assert!(no_caption_result.contains(&format!("<img src=\"{EMBEDDED_PIXEL}\" alt=\"\">")));
+
+    let remote = "![Test caption](image.jpg)";
+    let remote_result = render_markdown(remote);
+    assert!(remote_result.contains("href=\"image.jpg\""));
+    assert!(remote_result.contains(">Test caption</a>"));
+    assert!(!remote_result.contains("<img"));
 }
 
 #[test]
@@ -1283,20 +1320,19 @@ fn test_video_caption_functionality() {
         );
         let result = render_markdown(&video_text);
 
-        assert!(result.contains("<div class=\"media-with-caption\">"));
-        assert!(result.contains("<video controls"));
-        assert!(result.contains(&format!("src=\"https://example.com/video.{}", format)));
+        assert!(!result.contains("<video"));
         assert!(result.contains(&format!(
-            "<div class=\"media-caption\">My {} video</div>",
-            format
+            "href=\"https://example.com/video.{format}\""
         )));
+        assert!(result.contains(&format!(">My {format} video</a>")));
+        assert!(!result.contains("media-with-caption"));
     }
 
-    // Test video with special characters in caption
     let special_caption = r#"![My "special" video & test](https://example.com/video.mp4)"#;
     let special_result = render_markdown(special_caption);
-    assert!(special_result
-        .contains("<div class=\"media-caption\">My \"special\" video &amp; test</div>"));
+    assert!(special_result.contains("href=\"https://example.com/video.mp4\""));
+    assert!(special_result.contains("&amp;"));
+    assert!(!special_result.contains("<video"));
 }
 
 #[test]
@@ -1321,30 +1357,17 @@ Multiple media in one paragraph:
 
     let result = render_markdown(mixed_content);
 
-    // Check image with caption
-    assert!(result.contains("<div class=\"media-with-caption\">"));
-    assert!(
-        result.contains("<img src=\"https://example.com/image.jpg\" alt=\"Beautiful landscape\">")
-    );
-    assert!(result.contains("<div class=\"media-caption\">Beautiful landscape</div>"));
-
-    // Check video with caption
-    assert!(result.contains("<video controls"));
-    assert!(result.contains("<source src=\"https://example.com/video.mp4\""));
-    assert!(result.contains("<div class=\"media-caption\">Awesome video</div>"));
-
-    // Check image without caption (no wrapper)
-    assert!(result.contains("<img src=\"https://example.com/no-caption.png\" alt=\"\">"));
-
-    // Check video without caption (no wrapper)
-    assert!(result.contains("<source src=\"https://example.com/silent.webm\""));
-
-    // Verify correct number of wrappers (only for media with captions)
-    assert_eq!(
-        result.matches("<div class=\"media-with-caption\">").count(),
-        4
-    );
-    assert_eq!(result.matches("<div class=\"media-caption\">").count(), 4);
+    assert!(result.contains("href=\"https://example.com/image.jpg\""));
+    assert!(result.contains(">Beautiful landscape</a>"));
+    assert!(result.contains("href=\"https://example.com/video.mp4\""));
+    assert!(result.contains(">Awesome video</a>"));
+    assert!(result.contains("href=\"https://example.com/no-caption.png\""));
+    assert!(result.contains("href=\"https://example.com/silent.webm\""));
+    assert!(result.contains("href=\"img1.jpg\""));
+    assert!(result.contains("href=\"vid1.mp4\""));
+    assert!(!result.contains("<img"));
+    assert!(!result.contains("<video"));
+    assert!(!result.contains("media-with-caption"));
 }
 
 #[test]
@@ -1360,22 +1383,14 @@ And a video with caption:
 
     let result = render_markdown(mixed_media);
 
-    // Both images and videos use consistent naming
-    assert_eq!(
-        result.matches("<div class=\"media-with-caption\">").count(),
-        2
-    );
-    assert_eq!(result.matches("<div class=\"media-caption\">").count(), 2);
-
-    // Check specific captions
-    assert!(result.contains("<div class=\"media-caption\">Beautiful photo</div>"));
-    assert!(result.contains("<div class=\"media-caption\">Awesome clip</div>"));
-
-    // Check that both wrapper and caption classes are semantic and consistent
-    assert!(result.contains("media-with-caption"));
-    assert!(result.contains("media-caption"));
+    assert!(result.contains("href=\"https://example.com/photo.jpg\""));
+    assert!(result.contains(">Beautiful photo</a>"));
+    assert!(result.contains("href=\"https://example.com/video.mp4\""));
+    assert!(result.contains(">Awesome clip</a>"));
+    assert!(!result.contains("<img"));
+    assert!(!result.contains("<video"));
+    assert!(!result.contains("media-with-caption"));
     assert!(!result.contains("image-caption"));
-    assert!(!result.contains("img-with-caption"));
 }
 
 #[test]
@@ -1557,13 +1572,16 @@ fn editor_line_uses_the_inside_of_one_paragraph() {
             "**bold** and *italic*",
             "<strong>bold</strong> and <em>italic</em>",
         ),
+        (
+            "![alt](https://example.com/image.png)",
+            "<a href=\"https://example.com/image.png\" target=\"_blank\" rel=\"noopener noreferrer\">alt</a>",
+        ),
     ];
     let kept = [
         "# Title",
         "- one",
         "> quoted",
         "```\ncode\n```",
-        "![alt](https://example.com/image.png)",
         "First paragraph.\n\nSecond paragraph.",
     ];
     let mut html = Vec::new();
@@ -1652,9 +1670,9 @@ Final paragraph with *emphasis* and _underline_."#;
     assert!(result.contains("print"));
     assert!(result.contains("This is a code block"));
 
-    // Image should be standalone with caption wrapper
-    assert!(result.contains("<div class=\"media-with-caption\">"));
-    assert!(result.contains("<img src=\"https://example.com/image.jpg\" alt=\"Test image\">"));
+    assert!(result.contains("href=\"https://example.com/image.jpg\""));
+    assert!(result.contains(">Test image</a>"));
+    assert!(!result.contains("<img"));
 
     // Should not have any <br> tags (everything should be in proper paragraphs or blocks)
     assert!(!result.contains("<br>"));
@@ -2278,7 +2296,10 @@ fn renderer_samples() -> &'static [(&'static str, &'static str)] {
         ("quote", "> quoted"),
         ("table", "| Left | Right |\n| :--- | ---: |\n| A | B |"),
         ("fence", "```rust\nfn main() {}\n```"),
-        ("image", "![alt](https://example.com/image.png)"),
+        (
+            "image",
+            "![alt](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)",
+        ),
         ("link", "[docs](https://example.com/page)"),
         ("private-link", "[secret](http://127.0.0.1/secret)"),
         ("comment", "visible\n// hidden note\nstill here"),
@@ -2589,8 +2610,10 @@ fn renderer_fixture_json() -> String {
             assert!(rust_html.contains("wrap-button"));
         }
         if *name == "image" {
-            assert!(live.contains("![alt](https://example.com/image.png)"));
+            assert!(!live.contains("![alt]"), "{live}");
             assert!(live.contains("<img "));
+            assert!(live.contains("md-image-caption"), "{live}");
+            assert!(live.contains(">alt</div>"), "{live}");
             assert!(!live.contains("media-caption"), "{live}");
         }
         if *name == "comment" {
@@ -2749,12 +2772,14 @@ fn test_ssrf_protection() {
         let content = format!("![test]({})", safe_url);
         let result = render_markdown(&content);
 
-        // Safe URLs should appear in img src attributes
+        // A public picture URL is a link. The note does not fetch it.
         assert!(
-            result.contains(&format!("src=\"{}\"", safe_url)),
+            result.contains(&format!("href=\"{}\"", safe_url)),
             "Safe URL {} was incorrectly blocked",
             safe_url
         );
+        assert!(!result.contains("<img"), "{safe_url}");
+        assert!(!result.contains("<video"), "{safe_url}");
     }
 }
 

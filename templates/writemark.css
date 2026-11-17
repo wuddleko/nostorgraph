@@ -135,7 +135,8 @@ textarea::placeholder { color: var(--md-editor-placeholder, var(--md-editor-mute
    language can be changed. Wrap, Collapse, and Copy stay on the published page. */
 .md-code-block { margin-block: 20px; border: 1px solid var(--md-editor-border); border-radius: var(--md-editor-radius); background: var(--md-editor-code-bg); overflow: hidden; }
 .md-comment { color: var(--md-editor-muted); }
-.md-image img, .md-image video { display: block; max-inline-size: 100%; margin-block-start: 0.5em; }
+.md-image img, .md-image video { display: block; max-inline-size: 100%; margin-block-start: 0.5em; margin-inline: auto; }
+.md-image-caption { margin-block-start: 0.35em; font-size: 0.9em; font-style: italic; text-align: center; color: var(--md-editor-muted); }
 .md-code-block.md-source-form { white-space: pre-wrap; padding: 8px 12px; font-family: var(--md-editor-mono-font); font-size: 14px; line-height: 1.4; overflow: auto; }
 .md-code-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 22px; padding: 1px 6px; border-block-end: 1px solid var(--md-editor-border); background: var(--md-editor-code-header-bg); color: var(--md-editor-code-accent); font-family: var(--md-editor-ui-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif); font-size: 12px; line-height: 1.4; user-select: none; }
 .md-code-label { position: relative; text-transform: uppercase; font-weight: 500; letter-spacing: 0.5px; outline: none; min-inline-size: 1ch; }
@@ -216,7 +217,7 @@ textarea::placeholder { color: var(--md-editor-placeholder, var(--md-editor-mute
 .live-editor a, .md-line a, .md-task-source a, .md-cell a { color: var(--md-editor-fg); text-decoration: underline; }
 .live-editor a:hover, .md-line a:hover, .md-task-source a:hover, .md-cell a:hover { color: color-mix(in srgb, var(--md-editor-fg) 70%, #000 30%); }
 .live-editor code, .md-line code, .md-task-source code, .md-cell code { background: var(--md-editor-code-bg); padding: 2px 6px; font-family: var(--md-editor-mono-font); font-size: 0.9em; }
-.live-editor img, .md-line img, .md-image img { display: block; max-inline-size: 100%; block-size: auto; }
+.live-editor img, .md-line img, .md-image img { display: block; max-inline-size: 100%; block-size: auto; margin-inline: auto; }
 .md-code-line span { font-family: inherit; white-space: pre; }
 .md-heading { font-weight: 600; color: var(--md-editor-fg); }
 .md-h1 { font-size: 1.8em; }

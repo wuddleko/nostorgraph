@@ -46,10 +46,10 @@
   },
   {
     "name": "image",
-    "markdown": "![alt](https://example.com/image.png)",
-    "rust": "<p></p><div class=\"media-with-caption\"><img src=\"https://example.com/image.png\" alt=\"alt\"><div class=\"media-caption\">alt</div></div><p></p>",
-    "writemark": "<p></p><div class=\"media-with-caption\"><img src=\"https://example.com/image.png\" alt=\"alt\"><div class=\"media-caption\">alt</div></div><p></p>",
-    "live": "<div class=\"md-line md-image\" part=\"line\" data-editable=\"line\" data-kind=\"image\" data-from=\"0\" data-to=\"37\" data-source-form=\"true\" contenteditable=\"true\" spellcheck=\"true\">![alt](https://example.com/image.png)<img src=\"https://example.com/image.png\" alt=\"alt\" contenteditable=\"false\"></div>"
+    "markdown": "![alt](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)",
+    "rust": "<p></p><div class=\"media-with-caption\"><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\" alt=\"alt\"><div class=\"media-caption\">alt</div></div><p></p>",
+    "writemark": "<p></p><div class=\"media-with-caption\"><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\" alt=\"alt\"><div class=\"media-caption\">alt</div></div><p></p>",
+    "live": "<div class=\"md-line md-image\" part=\"line\" data-editable=\"line\" data-kind=\"image\" data-from=\"0\" data-to=\"126\" contenteditable=\"false\" spellcheck=\"false\"><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==\" alt=\"alt\" contenteditable=\"false\"><div class=\"md-image-caption\" contenteditable=\"false\">alt</div></div>"
   },
   {
     "name": "link",
