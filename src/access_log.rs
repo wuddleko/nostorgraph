@@ -184,9 +184,9 @@ mod tests {
 
     #[test]
     fn the_logger_is_installed_before_rocket_launches() {
-        let main = include_str!("main.rs");
-        let install = main.find("access_log::install()").unwrap();
-        let launch = main.find(".launch()").unwrap();
+        let server = include_str!("server.rs");
+        let install = server.find("access_log::install()").unwrap();
+        let launch = server.find(".launch()").unwrap();
         assert!(install < launch);
     }
 }
