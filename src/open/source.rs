@@ -1,3 +1,5 @@
+use url::Url;
+
 use super::link::{Link, Target};
 
 pub(super) fn load(link: &Link) -> Result<String, Error> {
@@ -33,6 +35,33 @@ fn load_with(config: &crate::config::Config, link: &Link) -> Result<String, Erro
         crate::relay_set::relay_timeout(config),
     )
     .ok_or(Error::Relays)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn page_request(origin: &str, segment: &str) -> String {
+    let mut url = Url::parse(&format!("{origin}/")).expect("page origin");
+    url.path_segments_mut()
+        .expect("page origin")
+        .clear()
+        .push(segment);
+    let host = host_header(&url).expect("page host");
+    format!(
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n",
+        path = url.path()
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn host_header(url: &Url) -> Option<String> {
+    let host = match url.host()? {
+        url::Host::Domain(domain) => domain.to_string(),
+        url::Host::Ipv4(address) => address.to_string(),
+        url::Host::Ipv6(address) => format!("[{address}]"),
+    };
+    match url.port() {
+        Some(port) => Some(format!("{host}:{port}")),
+        None => Some(host),
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -82,6 +111,39 @@ mod tests {
     fn an_empty_relay_list_fails_before_a_fetch() {
         let error = load_with(&Config::default(), &long_link(&[])).unwrap_err();
         assert_eq!(error.to_string(), "The relays did not return this note.");
+    }
+
+    #[test]
+    fn a_short_and_title_page_request_keeps_the_host_and_drops_the_key() {
+        let key = "A".repeat(43);
+        let short = crate::open::link::parse(&format!(
+            "https://example.test/s/0123456789abcdef0123#{key}"
+        ))
+        .expect("short link");
+        let short_request = request_for(&short);
+        assert!(short_request.starts_with("GET /0123456789abcdef0123 HTTP/1.1\r\n"));
+        assert!(short_request.contains("\r\nHost: example.test\r\n"));
+        assert!(!short_request.contains("/s/"));
+        assert!(!short_request.contains('?'));
+        assert!(!short_request.contains('#'));
+        assert!(!short_request.contains(&key));
+
+        let title = crate::open::link::parse(&format!("http://example.test:8443/My%20Note#{key}"))
+            .expect("title link");
+        let title_request = request_for(&title);
+        assert!(title_request.starts_with("GET /My%20Note HTTP/1.1\r\n"));
+        assert!(title_request.contains("\r\nHost: example.test:8443\r\n"));
+        assert!(!title_request.contains('?'));
+        assert!(!title_request.contains('#'));
+        assert!(!title_request.contains(&key));
+    }
+
+    fn request_for(link: &Link) -> String {
+        match &link.target {
+            Target::Short { origin, locator } => page_request(origin, locator),
+            Target::Title { origin, slug } => page_request(origin, slug),
+            Target::Long { .. } => panic!("a long link has no host page"),
+        }
     }
 
     #[test]
