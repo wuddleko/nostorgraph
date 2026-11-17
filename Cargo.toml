@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[[bin]]
+name = "ntgraph"
+path = "src/bin/ntgraph.rs"
+
 [workspace]
 members = ["parser", "page", "nip44", "crawler", "pdf", "pdf/wasm"]
 

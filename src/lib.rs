@@ -11,6 +11,7 @@ mod pages;
 pub(crate) mod relay_set;
 pub(crate) mod relays;
 pub(crate) mod seal;
+pub mod open;
 mod server;
 pub(crate) mod template;
 pub(crate) mod tor_circuits;
