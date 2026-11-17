@@ -64,6 +64,44 @@ fn host_header(url: &Url) -> Option<String> {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn read_marks(html: &str) -> Result<PageMarks, MarkError> {
+    let events = element_text(html, "sealed-event").ok_or(MarkError::Event)?;
+    let events: Vec<serde_json::Value> =
+        serde_json::from_str(events).map_err(|_| MarkError::Json)?;
+    let locator = match element_text(html, "sealed-locator") {
+        None => None,
+        Some(locator) if crate::nostr::sealed_locator(locator) => Some(locator.to_string()),
+        Some(_) => return Err(MarkError::Locator),
+    };
+    Ok(PageMarks { events, locator })
+}
+
+fn element_text<'a>(html: &'a str, id: &str) -> Option<&'a str> {
+    let marker = format!("id=\"{id}\"");
+    let start = html.find(&marker)?;
+    let after = &html[start + marker.len()..];
+    let tag_end = after.find('>')?;
+    let body = &after[tag_end + 1..];
+    let close = body.find("</div>")?;
+    Some(body[..close].trim())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
+struct PageMarks {
+    events: Vec<serde_json::Value>,
+    locator: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum MarkError {
+    Event,
+    Locator,
+    Json,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Error {
     Config(String),
@@ -144,6 +182,29 @@ mod tests {
             Target::Title { origin, slug } => page_request(origin, slug),
             Target::Long { .. } => panic!("a long link has no host page"),
         }
+    }
+
+    #[test]
+    fn saved_pages_expose_the_event_and_the_locator() {
+        let short = r#"<div id="sealed-event" hidden>[{"content":"hello"}]</div>"#;
+        let short = read_marks(short).expect("short page");
+        assert!(short.locator.is_none());
+        assert_eq!(short.events[0]["content"], "hello");
+
+        let title = r#"<div id="sealed-locator" hidden>0123456789abcdef0123</div><div id="sealed-event" hidden>[{"content":"note"}]</div>"#;
+        let title = read_marks(title).expect("title page");
+        assert_eq!(title.locator.as_deref(), Some("0123456789abcdef0123"));
+        assert_eq!(title.events[0]["content"], "note");
+
+        let missing = r#"<div id="sealed-locator" hidden>0123456789abcdef0123</div>"#;
+        assert_eq!(read_marks(missing), Err(MarkError::Event));
+
+        let escaped = r#"<div id="sealed-event" hidden>[{"content":"a\u003cb"}]</div>"#;
+        let escaped = read_marks(escaped).expect("escaped page");
+        assert_eq!(escaped.events[0]["content"], "a<b");
+
+        let bad_locator = r#"<div id="sealed-locator" hidden>not-a-locator</div><div id="sealed-event" hidden>[]</div>"#;
+        assert_eq!(read_marks(bad_locator), Err(MarkError::Locator));
     }
 
     #[test]
