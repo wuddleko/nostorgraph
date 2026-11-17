@@ -9,7 +9,7 @@ pub(super) fn render(note: &nostorgraph_nip44::Note) -> Result<String, String> {
         String::new()
     } else {
         format!(
-            r#"<div class="article-meta">{}</div>"#,
+            r#"<div class="article-meta" id="sealed-author">{}</div>"#,
             nostorgraph_parser::html_escape(&note.author)
         )
     };
@@ -28,8 +28,9 @@ pub(super) fn render(note: &nostorgraph_nip44::Note) -> Result<String, String> {
 <div class="container">
 <div class="content">
 <h1 id="sealed-title">{title}</h1>
+<svg class="wave" viewBox="0 0 640 16" preserveAspectRatio="none" aria-hidden="true"><path d="M0 8 H640"></path></svg>
 {byline}
-<div class="article-content">
+<div class="article-content" id="CONTENT">
 {body}
 </div>
 </div>
@@ -57,6 +58,8 @@ mod tests {
         let html = render(&note).expect("render");
         assert!(html.contains("<title>Opened note</title>"));
         assert!(html.contains("<h1 id=\"sealed-title\">Opened note</h1>"));
+        assert!(html.contains("id=\"CONTENT\""));
+        assert!(html.contains("id=\"sealed-author\""));
         assert!(html.contains("<strong>violet ink</strong>"));
         assert!(html.contains("Ada"));
         assert!(!html.contains(key));
