@@ -77,6 +77,34 @@ fn read_marks(html: &str) -> Result<PageMarks, MarkError> {
     Ok(PageMarks { events, locator })
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+fn event_from_page(
+    link: &Link,
+    html: &str,
+    config: &crate::config::Config,
+) -> Result<String, Error> {
+    let marks = read_marks(html).map_err(|_| Error::Page)?;
+    let wanted = match &link.target {
+        Target::Short { locator, .. } => locator.clone(),
+        Target::Title { .. } => marks.locator.clone().ok_or(Error::Page)?,
+        Target::Long { .. } => return Err(Error::Shape),
+    };
+    for event in &marks.events {
+        let Some((_, locator)) = crate::nostr::sealed_note_from_json(
+            event,
+            config.limits.title_max_length,
+            config.limits.alias_max_length,
+            config.limits.content_max_length,
+        ) else {
+            continue;
+        };
+        if locator == wanted {
+            return serde_json::to_string(event).map_err(|_| Error::Page);
+        }
+    }
+    Err(Error::Page)
+}
+
 fn element_text<'a>(html: &'a str, id: &str) -> Option<&'a str> {
     let marker = format!("id=\"{id}\"");
     let start = html.find(&marker)?;
@@ -108,6 +136,7 @@ pub(super) enum Error {
     Socks,
     Relays,
     Shape,
+    Page,
 }
 
 impl std::fmt::Display for Error {
@@ -119,6 +148,7 @@ impl std::fmt::Display for Error {
             }
             Error::Relays => f.write_str("The relays did not return this note."),
             Error::Shape => f.write_str("That link is not a long link."),
+            Error::Page => f.write_str("This page has no sealed note."),
         }
     }
 }
@@ -205,6 +235,82 @@ mod tests {
 
         let bad_locator = r#"<div id="sealed-locator" hidden>not-a-locator</div><div id="sealed-event" hidden>[]</div>"#;
         assert_eq!(read_marks(bad_locator), Err(MarkError::Locator));
+    }
+
+    const LOCATOR: &str = "0123456789abcdef0123";
+    const OTHER: &str = "fedcba9876543210abcd";
+
+    #[test]
+    fn the_first_matching_event_is_kept() {
+        let config = Config::default();
+        let right = signed_event(LOCATOR, "hello");
+        let other = signed_event(OTHER, "nope");
+        let array = serde_json::to_string(&vec![other, right.clone()]).expect("array");
+        let short_page = format!(r#"<div id="sealed-event" hidden>{array}</div>"#);
+        let kept = event_from_page(&short_link(LOCATOR), &short_page, &config).expect("short");
+        let kept: serde_json::Value = serde_json::from_str(&kept).expect("event");
+        assert_eq!(kept["content"], right["content"]);
+
+        let empty = r#"<div id="sealed-event" hidden>[]</div>"#;
+        assert_eq!(
+            event_from_page(&short_link(LOCATOR), empty, &config)
+                .unwrap_err()
+                .to_string(),
+            "This page has no sealed note."
+        );
+        assert_eq!(
+            event_from_page(&short_link(LOCATOR), "<p>none</p>", &config)
+                .unwrap_err()
+                .to_string(),
+            "This page has no sealed note."
+        );
+
+        let content = right["content"].clone();
+        let title_page = format!(
+            r#"<div id="sealed-locator" hidden>{LOCATOR}</div><div id="sealed-event" hidden>{}</div>"#,
+            serde_json::to_string(&vec![right]).expect("array")
+        );
+        let kept = event_from_page(&title_link(), &title_page, &config).expect("title");
+        let kept: serde_json::Value = serde_json::from_str(&kept).expect("event");
+        assert_eq!(kept["content"], content);
+
+        let mismatch = format!(
+            r#"<div id="sealed-event" hidden>{}</div>"#,
+            serde_json::to_string(&vec![signed_event(OTHER, "nope")]).expect("array")
+        );
+        assert_eq!(
+            event_from_page(&short_link(LOCATOR), &mismatch, &config)
+                .unwrap_err()
+                .to_string(),
+            "This page has no sealed note."
+        );
+    }
+
+    fn signed_event(locator: &str, body: &str) -> serde_json::Value {
+        let payload = nostorgraph_nip44::seal("Title", "Ada", body, locator, &[7; 32], &[9; 32])
+            .expect("seal");
+        let note = crate::nostr::sign_sealed_note(&payload, locator, 1_700_000_000);
+        serde_json::from_str(&note.event_json).expect("event json")
+    }
+
+    fn short_link(locator: &str) -> Link {
+        Link {
+            key: [0; nostorgraph_nip44::SECRET_LEN],
+            target: Target::Short {
+                origin: "https://example.test".to_string(),
+                locator: locator.to_string(),
+            },
+        }
+    }
+
+    fn title_link() -> Link {
+        Link {
+            key: [0; nostorgraph_nip44::SECRET_LEN],
+            target: Target::Title {
+                origin: "https://example.test".to_string(),
+                slug: "My Note".to_string(),
+            },
+        }
     }
 
     #[test]
