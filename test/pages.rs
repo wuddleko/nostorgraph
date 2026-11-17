@@ -989,7 +989,10 @@ fn save_reads_the_note_in_the_tab_and_names_the_file_from_the_title() {
     let home = include_str!("../templates/home.js");
     let start = home.find("function noteFields()").unwrap();
     let save = &home[start..];
-    assert!(save.contains("content: editor.value"));
+    assert!(save.contains("content: postedNote()"));
+    assert!(home.contains(
+        "typeof editor.contentForPost === \"function\" ? editor.contentForPost() : editor.value"
+    ));
     assert!(save.contains("!fields.title.trim() && !fields.alias.trim() && !fields.content.trim()"));
     assert!(save.contains("if (noteIsEmpty(noteFields())) return;"));
     assert!(save.contains("saveFilename(fields.title, \".md\")"));
