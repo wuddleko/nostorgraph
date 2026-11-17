@@ -7,7 +7,10 @@ mod source;
 pub fn run() -> i32 {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match attempt(&arguments) {
-        Ok(_document) => 0,
+        Ok(path) => {
+            println!("{path}");
+            0
+        }
         Err(failure) => {
             eprintln!("{}", failure.message);
             failure.code
@@ -29,7 +32,9 @@ fn attempt(arguments: &[String]) -> Result<String, Failure> {
     };
     let opened =
         note::open(&event, &parsed.key, locator).map_err(|error| failure(error.to_string()))?;
-    document::render(&opened).map_err(failure)
+    let page = document::render(&opened).map_err(failure)?;
+    let path = browse::open(locator, &page).map_err(|error| failure(error.to_string()))?;
+    Ok(path.display().to_string())
 }
 
 fn link_message(error: link::Error) -> Failure {
