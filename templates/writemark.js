@@ -44,6 +44,7 @@ import {
   isFenceLine,
   isCommentLine,
   loneImageMarkdown,
+  embeddedImageUrl,
   isInsideInlineCode,
   splitTableRow,
   isTableDelimiter,
@@ -118,6 +119,145 @@ function decodeHtmlAttribute(value) {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+const IMAGE_TRAILER_START = "<!--ngimg\n";
+const IMAGE_TRAILER_END = "\n-->";
+function noteImageData(url, images) {
+  const key = String(url ?? "").trim();
+  if (embeddedImageUrl(key)) return key;
+  if (!images || typeof images.get !== "function") return "";
+  const data = images.get(key);
+  return embeddedImageUrl(data) ? data : "";
+}
+function imageName(file, images, text) {
+  const raw = String(file?.name || "").split(/[/\\]/).pop() || "";
+  const stem = raw.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "picture";
+  const ext = /\.(png|gif|webp)$/i.test(raw) ? raw.match(/\.(png|gif|webp)$/i)[0].toLowerCase() : ".jpg";
+  let name = `${stem.slice(0, 80)}${ext}`;
+  let n = 2;
+  const taken = candidate => images.has(candidate) || String(text || "").includes(`](${candidate})`);
+  while (taken(name)) {
+    name = `${stem.slice(0, 70)}-${n}${ext}`;
+    n += 1;
+  }
+  return name;
+}
+function newImageId(images) {
+  const bytes = new Uint8Array(4);
+  globalThis.crypto.getRandomValues(bytes);
+  let id = `ngimg:${[...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
+  while (images.has(id)) id += "0";
+  return id;
+}
+function liftEmbeddedImages(body, images) {
+  return String(body ?? "").replace(/!\[([^\]]*)\]\((data:image\/(?:png|gif|jpe?g|webp);base64,[A-Za-z0-9+/=]+)\)/g, (full, alt, data) => {
+    if (!embeddedImageUrl(data)) return full;
+    const name = imageName({ name: alt || "picture.jpg" }, images, "");
+    images.set(name, data);
+    return `![${name}](${name})`;
+  });
+}
+function prepareNoteImages(markdown) {
+  const source = String(markdown ?? "");
+  const images = new Map();
+  let body = source;
+  const start = source.lastIndexOf(IMAGE_TRAILER_START);
+  if (start >= 0 && (start === 0 || source[start - 1] === "\n") && source.endsWith(IMAGE_TRAILER_END)) {
+    const inner = source.slice(start + IMAGE_TRAILER_START.length, -IMAGE_TRAILER_END.length);
+    const found = new Map();
+    let valid = true;
+    for (const line of inner.split("\n")) {
+      if (!line) continue;
+      const space = line.indexOf(" ");
+      const id = space < 0 ? "" : line.slice(0, space);
+      const data = space < 0 ? "" : line.slice(space + 1);
+      if (!/^[A-Za-z0-9._:-]{1,120}$/.test(id) || !embeddedImageUrl(data)) { valid = false; break; }
+      found.set(id, data);
+    }
+    if (valid) {
+      for (const [id, data] of found) images.set(id, data);
+      body = source.slice(0, start).replace(/\n+$/, "");
+    }
+  }
+  return { body: liftEmbeddedImages(body, images), images };
+}
+function serializeNoteImages(body, images) {
+  const text = String(body ?? "");
+  if (!images || typeof images.get !== "function" || images.size === 0) return text;
+  const lines = [];
+  for (const [name, data] of images) {
+    if (!text.includes(`](${name})`) || !embeddedImageUrl(data)) continue;
+    lines.push(`${name} ${data}`);
+  }
+  if (!lines.length) return text;
+  return `${text.replace(/\n+$/, "")}\n\n<!--ngimg\n${lines.join("\n")}\n-->`;
+}
+function imageFile(file) {
+  const type = String(file?.type || "").toLowerCase();
+  if (/^image\/(?:png|jpe?g|gif|webp)$/.test(type)) return true;
+  return /\.(?:png|jpe?g|gif|webp)$/i.test(String(file?.name || ""));
+}
+function clipboardImageFiles(clipboard) {
+  const listed = Array.from(clipboard?.files || []).filter(imageFile);
+  if (listed.length) return listed;
+  const found = [];
+  for (const item of Array.from(clipboard?.items || [])) {
+    if (item.kind !== "file" || !imageFile({ type: item.type })) continue;
+    const file = item.getAsFile?.();
+    if (file) found.push(file);
+  }
+  return found;
+}
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("read"));
+    reader.readAsDataURL(blob);
+  });
+}
+function jpegDataUrl(bitmap, edge, quality) {
+  const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return Promise.reject(new Error("canvas"));
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(bitmap, 0, 0, width, height);
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (!blob) { reject(new Error("encode")); return; }
+      blobToDataUrl(blob).then(resolve, reject);
+    }, "image/jpeg", quality);
+  });
+}
+async function reencodedImage(file, budget) {
+  if (!imageFile(file) || typeof createImageBitmap !== "function") throw new Error("image");
+  if (budget < 64) throw new Error("fit");
+  const bitmap = await createImageBitmap(file);
+  try {
+    let edge = Math.min(1600, Math.max(bitmap.width, bitmap.height));
+    let quality = 0.82;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const url = await jpegDataUrl(bitmap, edge, quality);
+      if (embeddedImageUrl(url) && url.length <= budget) return url;
+      if (quality > 0.55) {
+        quality = Math.round((quality - 0.12) * 100) / 100;
+        continue;
+      }
+      const next = Math.round(edge * 0.7);
+      if (next < 64 || next === edge) break;
+      edge = next;
+      quality = 0.82;
+    }
+    throw new Error("fit");
+  } finally {
+    bitmap.close?.();
+  }
 }
 function mediaFromInlineHtml(html) {
   const source = String(html ?? "");
@@ -252,12 +392,19 @@ function liveBlockHtml(block, opts = {}) {
   }
   if (block.line && loneImageMarkdown(block.line.text)) {
     const line = block.line;
-    const media = mediaFromInlineHtml(renderInline(line.text, opts));
-    const body = line.text ? escapeHtml(line.text) : "<br>";
-    let mediaHtml = "";
-    if (media?.kind === "img" && media.src) mediaHtml = `<img src="${escapeAttribute(media.src)}" alt="${escapeAttribute(media.alt)}" contenteditable="false">`;
-    else if (media?.kind === "video" && media.src) mediaHtml = `<video controls contenteditable="false"><source src="${escapeAttribute(media.src)}" type="${escapeAttribute(media.type)}"></video>`;
-    return `<div class="md-line md-image" part="line" data-editable="line" data-kind="image" data-from="${line.start}" data-to="${line.end}" data-source-form="true" contenteditable="${editable}" spellcheck="${spellcheck}">${body}${mediaHtml}</div>`;
+    const image = loneImageMarkdown(line.text);
+    const data = noteImageData(image?.url, opts.images);
+    // The view shows the picture. The markdown name stays short.
+    if (data) {
+      const alt = String(image?.label ?? "");
+      const caption = alt.trim()
+        ? `<div class="md-image-caption" contenteditable="false">${escapeHtml(alt.trim())}</div>`
+        : "";
+      const mediaHtml = `<img src="${escapeAttribute(data)}" alt="${escapeAttribute(alt)}" contenteditable="false">`;
+      // The picture is not an editing host. A contenteditable line whose only
+      // content is an image is painted twice by WebKit.
+      return `<div class="md-line md-image" part="line" data-editable="line" data-kind="image" data-from="${line.start}" data-to="${line.end}" contenteditable="false" spellcheck="false">${mediaHtml}${caption}</div>`;
+    }
   }
   if (block.type === "blank") {
     const placeholderAttrs = opts.emptyDocument ? `data-placeholder="${escapeAttribute(opts.placeholder || "")}"` : "";
@@ -438,6 +585,9 @@ class WritemarkEditorElement extends HTMLElement {
     this._suppressLiveClick = false;
     this._focusWithin = false;
     this._sourceFormKeyShown = "";
+    this._images = new Map();
+    this._imageSourceFrom = null;
+    this._pendingImageSource = null;
     this._sourceFormLock = false;
     this._blockCacheValue = null;
     this._blockCache = null;
@@ -485,9 +635,10 @@ class WritemarkEditorElement extends HTMLElement {
       this._renderShell();
       this._bindEvents();
       this._hasConnected = true;
-      const initial = this.getAttribute("value") ?? this._value ?? "";
-      this._defaultValue = normalizeLineEndings(initial);
-      this._setValueInternal(this._defaultValue, { source: "init", silent: true, recordUndo: false, preserveSelection: false });
+      const initial = prepareNoteImages(normalizeLineEndings(this.getAttribute("value") ?? this._value ?? ""));
+      this._images = initial.images;
+      this._defaultValue = initial.body;
+      this._setValueInternal(initial.body, { source: "init", silent: true, recordUndo: false, preserveSelection: false });
       this._syncAttributesToControls();
       this._renderAll({ restoreSelection: false });
       this._updateFormValue();
@@ -522,11 +673,12 @@ class WritemarkEditorElement extends HTMLElement {
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue === newValue) return;
     if (name === "value") {
-      const nextDefault = normalizeLineEndings(newValue ?? "");
-      if (!this._hasConnected) { this._value = nextDefault; this._defaultValue = nextDefault; return; }
+      const nextDefault = prepareNoteImages(normalizeLineEndings(newValue ?? ""));
+      if (!this._hasConnected) { this._images = nextDefault.images; this._value = nextDefault.body; this._defaultValue = nextDefault.body; return; }
       const wasDirty = this._dirty;
-      this._defaultValue = nextDefault;
-      if (!wasDirty) this._setValueInternal(nextDefault, { source: "attribute", silent: true, recordUndo: false, preserveSelection: false });
+      this._images = nextDefault.images;
+      this._defaultValue = nextDefault.body;
+      if (!wasDirty) this._setValueInternal(nextDefault.body, { source: "attribute", silent: true, recordUndo: false, preserveSelection: false });
       else {
         const oldDirty = this._dirty;
         this._dirty = this._value !== this._defaultValue;
@@ -548,7 +700,8 @@ class WritemarkEditorElement extends HTMLElement {
   }
 
   get value() { return this._value; }
-  set value(next) { this._setValueInternal(next, { source: "api", silent: false, recordUndo: false }); }
+  set value(next) { const prepared = prepareNoteImages(normalizeLineEndings(next ?? "")); this._images = prepared.images; this._setValueInternal(prepared.body, { source: "api", silent: false, recordUndo: false }); }
+  contentForPost() { return serializeNoteImages(this._value ?? "", this._images); }
   get defaultValue() { return this._defaultValue; }
   set defaultValue(next) { this._defaultValue = normalizeLineEndings(next ?? ""); this.setAttribute("value", this._defaultValue); }
   get name() { return this.getAttribute("name") ?? ""; }
@@ -961,7 +1114,8 @@ class WritemarkEditorElement extends HTMLElement {
   }
   _setValueInternal(next, opts = {}) {
     const previousValue = this._value;
-    const value = normalizeLineEndings(next ?? ""); const before = this._snapshot(); const changed = value !== previousValue;
+    if (!this._images) this._images = new Map();
+    const value = liftEmbeddedImages(normalizeLineEndings(next ?? ""), this._images); const before = this._snapshot(); const changed = value !== previousValue;
     this._value = value;
     if (this._sourceTextarea && !this._isLiveVisible() && this._sourceTextarea.value !== value) this._sourceTextarea.value = value;
     if (!opts.preserveSelection) this._selection = { start: clamp(this._selection.start, 0, value.length), end: clamp(this._selection.end, 0, value.length), direction: "none" };
@@ -1363,6 +1517,13 @@ class WritemarkEditorElement extends HTMLElement {
     if (!node || !block) return false;
     const blockFrom = block.from ?? block.line?.start ?? 0;
     const blockTo = block.to ?? block.line?.end ?? blockFrom;
+    if (node.classList?.contains("md-image")) {
+      node.dataset.kind = "image";
+      node.dataset.from = String(block.line?.start ?? blockFrom);
+      node.dataset.to = String(block.line?.end ?? blockTo);
+      node.contentEditable = "false";
+      return true;
+    }
     if (node.dataset) {
       node.dataset.kind = block.type;
       node.dataset.from = String(blockFrom);
@@ -2057,7 +2218,8 @@ class WritemarkEditorElement extends HTMLElement {
   }
   _blockIsSourceForm(block) {
     if (!block || block.type === "table" || block.type === "code-fence") return false;
-    if (isCommentLine(block.line?.text) || loneImageMarkdown(block.line?.text)) return false;
+    if (isCommentLine(block.line?.text)) return false;
+    if (loneImageMarkdown(block.line?.text) && block.from !== this._imageSourceFrom) return false;
     return this._selectionFullyInside(block.from, block.to);
   }
   _tableCellHolding(block, start, end) {
@@ -2100,7 +2262,8 @@ class WritemarkEditorElement extends HTMLElement {
     const index = this._blockIndexForOffset(blocks, start);
     const block = blocks[index];
     if (!block || start < block.from || end > Math.max(block.to, block.from)) return "";
-    if (block.type === "code-fence" || isCommentLine(block.line?.text) || loneImageMarkdown(block.line?.text)) return "";
+    if (block.type === "code-fence" || isCommentLine(block.line?.text)) return "";
+    if (loneImageMarkdown(block.line?.text) && block.from !== this._imageSourceFrom) return "";
     if (block.type === "table") {
       const hit = this._tableCellHolding(block, start, end);
       if (!hit) return "";
@@ -2144,9 +2307,16 @@ class WritemarkEditorElement extends HTMLElement {
     this._rebuildLiveIndex();
     return true;
   }
+  _releaseImageSourceUnlessEditing() {
+    if (this._imageSourceFrom == null || !this._focusWithin) return;
+    const blocks = this._liveBlocks?.length ? this._liveBlocks : this._blockCache;
+    const block = blocks?.find(candidate => candidate.from === this._imageSourceFrom);
+    if (!block || !this._selectionFullyInside(block.from, block.to)) this._imageSourceFrom = null;
+  }
   _syncSourceForm() {
     if (this._touchCaretSession()) return;
     if (!this._liveEditor || this.mode === "source" || this._sourceFormLock || this._pointerSelection || this._isComposing) return;
+    this._releaseImageSourceUnlessEditing();
     const key = this._sourceFormKey();
     if (this._deferredPaint || this._paintFrame) {
       if (this._deferredPaintBlocked()) return;
@@ -2301,6 +2471,7 @@ class WritemarkEditorElement extends HTMLElement {
       spellcheck: "false",
       indentString: this.indentString,
       placeholder: this.placeholder,
+      images: this._images,
       emptyDocument: this._value.length === 0,
       disabled: this.disabled,
       readonly: this.readonly,
@@ -2933,6 +3104,7 @@ class WritemarkEditorElement extends HTMLElement {
     if (!editable && this._touchCaretSession()) editable = this._liveEditor?.querySelector("[data-editable]") || null;
     this._beforeInputTarget = null;
     if (!editable) return;
+    if (editable.dataset.kind === "image" && editable.dataset.sourceForm !== "true") return;
     const before = this._beforeInputSnapshot;
     let from = this._liveFrom(editable);
     let to = this._liveTo(editable);
@@ -3322,6 +3494,12 @@ class WritemarkEditorElement extends HTMLElement {
     // Keep a control click from moving the caret or stealing focus.
     if (event.target.closest?.("[data-table-control]")) { event.preventDefault(); return; }
     if (event.target.closest?.("[data-task-checkbox]")) return;
+    const imageLine = event.target.closest?.(".md-image");
+    this._pendingImageSource = null;
+    if (imageLine?.dataset.kind === "image" && imageLine.dataset.sourceForm !== "true") {
+      const from = Number(imageLine.dataset.from);
+      if (Number.isFinite(from)) this._pendingImageSource = from;
+    }
     const anchor = this._sourceOffsetForClientPoint(event.clientX, event.clientY);
     if (anchor == null) return;
     const editable = this._liveEditableFromPoint(event.clientX, event.clientY);
@@ -3400,6 +3578,8 @@ class WritemarkEditorElement extends HTMLElement {
     }
     this._suppressLiveClick = state.moved;
     if (this._suppressLiveClick) globalThis.setTimeout?.(() => { this._suppressLiveClick = false; }, 0);
+    if (!state.moved && this._pendingImageSource != null) this._imageSourceFrom = this._pendingImageSource;
+    this._pendingImageSource = null;
     this._pointerSelection = null;
     const doc = this.ownerDocument || document;
     doc.removeEventListener("mousemove", this._boundLiveMouseMove, true);
@@ -3408,6 +3588,10 @@ class WritemarkEditorElement extends HTMLElement {
     else {
       this._emitSelectionChange();
       if (!this._isComposing) this._scheduleCompletionUpdate();
+    }
+    if (this._imageSourceFrom != null) {
+      this._focusWithin = true;
+      this._focusLiveTarget(this._liveEditor);
     }
     this._syncSourceForm();
   }
@@ -4949,8 +5133,9 @@ class WritemarkEditorElement extends HTMLElement {
   _onPaste(event) {
     if (this.disabled || this.readonly) return;
     const clipboard = event.clipboardData || event.dataTransfer; if (!clipboard) return;
-    const files = Array.from(clipboard.files || []);
-    if (files.length > 0) { event.preventDefault(); const insertionPoint = this.selectionStart; this._dispatch("md-file-paste", { files, insertionPoint, insertMarkdown: markdown => this._insertPastedMarkdown(markdown, "file") }); return; }
+    const images = clipboardImageFiles(clipboard);
+    if (images.length > 0) { event.preventDefault(); void this._takeImageFiles(images); return; }
+    if (Array.from(clipboard.files || []).length > 0) { event.preventDefault(); this._announce("That file is not added."); return; }
     const text = safeClipboardGet(clipboard, "text/plain");
     if (text && this.selectionStart !== this.selectionEnd && isProbablyUrl(text) && !safeClipboardGet(clipboard, "text/markdown") && !safeClipboardGet(clipboard, "text/html")) { event.preventDefault(); this._runAction("inline.link", { url: text.trim() }, { source: "paste", apply: true }); return; }
     const { markdown, kind } = markdownFromClipboardData(clipboard);
@@ -4958,7 +5143,41 @@ class WritemarkEditorElement extends HTMLElement {
     event.preventDefault();
     this._insertPastedMarkdown(markdown, kind);
   }
-  _onDrop(event) { if (this.disabled || this.readonly) return; const files = Array.from(event.dataTransfer?.files || []); if (!files.length) return; event.preventDefault(); const insertionPoint = this.selectionStart; this._dispatch("md-file-drop", { files, insertionPoint, insertMarkdown: markdown => this._insertPastedMarkdown(markdown, "file") }); }
+  _onDrop(event) { if (this.disabled || this.readonly) return; const files = Array.from(event.dataTransfer?.files || []); if (!files.length) return; event.preventDefault(); void this._takeImageFiles(files); }
+  async _takeImageFiles(files) {
+    const images = files.filter(imageFile);
+    if (!images.length) { this._announce("That file is not added."); return; }
+    const start = this.selectionStart;
+    const end = this.selectionEnd;
+    const stamp = this._value;
+    const chunks = [];
+    let used = 0;
+    let unfit = 0;
+    for (const file of images) {
+      const max = parseLengthConstraint(this.getAttribute("maxlength"));
+      const current = serializeNoteImages(stamp, this._images).length;
+      const limit = max == null ? current + 120_000 : max;
+      const budget = limit - current - used - 64;
+      try {
+        const url = await reencodedImage(file, budget);
+        const name = imageName(file, this._images, stamp);
+        this._images.set(name, url);
+        const markdown = `![${name}](${name})`;
+        chunks.push(markdown);
+        used += url.length + markdown.length + 2;
+      } catch (error) {
+        if (error?.message === "fit") unfit += 1;
+      }
+    }
+    if (this._value !== stamp) { this._announce("The note changed before the picture was ready."); return; }
+    if (!chunks.length) { this._announce(unfit ? "That picture does not fit in the note." : "That picture could not be added."); return; }
+    let text = chunks.join("\n\n");
+    if (start > 0 && stamp[start - 1] !== "\n") text = `\n${text}`;
+    if (end < stamp.length && stamp[end] !== "\n") text = `${text}\n`;
+    this.setSelectionRange(start, end);
+    this._insertPastedMarkdown(text, "file");
+    this._announce(chunks.length === 1 ? "Picture added." : "Pictures added.");
+  }
 
   _getContext() {
     const sel = this._getCurrentSelection(); this._selection = sel;
@@ -5403,9 +5622,9 @@ class WritemarkEditorElement extends HTMLElement {
   _setCompletionIndex(index, direction = 1) { const n = this._completion.items.length; if (!n) return; this._completion.activeIndex = this._enabledCompletionIndex(clamp(index, 0, n - 1), direction); this._renderCompletion(); }
   _acceptCompletion(source = "action") { if (!this._completion.open || !this._completion.items.length) return fail("not-applicable"); const provider = this._providers.get(this._completion.providerId); const item = this._completion.items[this._completion.activeIndex]; if (!provider || !item || item.disabled) return fail("not-applicable"); const ctx = this._getContext(); let result; try { const currentMatch = provider.match(ctx); if (!currentMatch) { this._closeCompletion(); return fail("not-applicable"); } result = provider.apply(item, currentMatch, ctx); } catch (error) { this._emitError("completion", error, true, { providerId: provider.id }); this._closeCompletion(); return fail("provider-error", String(error?.message || error)); } this._closeCompletion(); if (result?.ok && result.transaction) { const before = this._snapshot(); this._applyTransaction({ ...result.transaction, source: source === "pointer" ? "pointer" : "keyboard", actionId: "completion.accept" }, { source: source === "pointer" ? "pointer" : "keyboard" }); const after = this._snapshot(); this._dispatch("md-completion-accept", { providerId: provider.id, item, before, after }); if (result.announcement) this._announce(result.announcement); return okNoop(result.announcement); } return result || fail("not-applicable"); }
 
-  _updateFormValue() { if (!this._internals) return; this.disabled ? this._internals.setFormValue(null) : this._internals.setFormValue(this._value); }
+  _updateFormValue() { if (!this._internals) return; this.disabled ? this._internals.setFormValue(null) : this._internals.setFormValue(this.contentForPost()); }
   _fallbackValidity() { const flags = this._computeValidityFlags(); return { valid: Object.keys(flags).length === 0, valueMissing: Boolean(flags.valueMissing), tooShort: Boolean(flags.tooShort), tooLong: Boolean(flags.tooLong), customError: Boolean(flags.customError) }; }
-  _computeValidityFlags() { const flags = {}; const value = this._value; if (this._customValidityMessage) flags.customError = true; if (this.required) { const empty = DEFAULTS.emptyRequiredTrim ? value.trim().length === 0 : value.length === 0; if (empty) flags.valueMissing = true; } const min = parseLengthConstraint(this.getAttribute("minlength")); if (min != null && value.length > 0 && value.length < min) flags.tooShort = true; const max = parseLengthConstraint(this.getAttribute("maxlength")); if (max != null && value.length > max) flags.tooLong = true; return flags; }
+  _computeValidityFlags() { const flags = {}; const visible = this._value; const posted = this.contentForPost(); if (this._customValidityMessage) flags.customError = true; if (this.required) { const empty = DEFAULTS.emptyRequiredTrim ? visible.trim().length === 0 : visible.length === 0; if (empty) flags.valueMissing = true; } const min = parseLengthConstraint(this.getAttribute("minlength")); if (min != null && visible.length > 0 && visible.length < min) flags.tooShort = true; const max = parseLengthConstraint(this.getAttribute("maxlength")); if (max != null && posted.length > max) flags.tooLong = true; return flags; }
   _updateValidity() { if (!this._sourceTextarea) return; const flags = this._computeValidityFlags(); const valid = Object.keys(flags).length === 0; if (valid) this._validationVisible = false; for (const el of [this._sourceTextarea, this._liveEditor]) el?.setAttribute("aria-invalid", valid ? "false" : "true"); this._validation.textContent = ""; this._validationMessage = this._customValidityMessage || ""; const anchor = this.mode === "source" ? this._sourceTextarea : this._liveEditor; const setValidityMessage = valid ? "" : (this._customValidityMessage || " "); this._internals?.setValidity(flags, setValidityMessage, anchor); }
   _emitSelectionChange() { this._dispatch("md-selection-change", { selectionStart: this._selection.start, selectionEnd: this._selection.end, selectionDirection: this._selection.direction || "none" }); }
   _announce(message) { if (!message || !this._status) return; this._status.textContent = ""; requestAnimationFrame(() => { this._status.textContent = message; }); }

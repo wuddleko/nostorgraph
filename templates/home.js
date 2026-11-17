@@ -447,8 +447,11 @@ function paintSavedRelayLists(doc, storage) {
 
             let noteLocked = false;
 
+            function postedNote() {
+                return typeof editor.contentForPost === "function" ? editor.contentForPost() : editor.value;
+            }
             function syncPublishButtons() {
-                const overLimit = editor.value.length > contentLimit;
+                const overLimit = postedNote().length > contentLimit;
                 const blocked = !hasAnyPublishRelay();
                 publishButtons.forEach((button) => {
                     button.disabled =
@@ -636,7 +639,7 @@ function paintSavedRelayLists(doc, storage) {
                 if (publishing || !everyRelayHasPath()) {
                     return;
                 }
-                if (editor.value.length > contentLimit) {
+                if (postedNote().length > contentLimit) {
                     alert(
                         "Content exceeds " +
                             contentLimit.toLocaleString() +
@@ -652,7 +655,7 @@ function paintSavedRelayLists(doc, storage) {
                     showPublishError("A title is required.");
                     return;
                 }
-                const content = editor.value;
+                const content = postedNote();
                 if (!content.trim()) {
                     showPublishError("Write something before publishing.");
                     return;
@@ -931,7 +934,7 @@ function paintSavedRelayLists(doc, storage) {
             }
             function paintCharCount() {
                 charCountFrame = 0;
-                const count = editor.value.length;
+                const count = postedNote().length;
                 const countText =
                     count.toLocaleString() +
                     " / " +
@@ -1032,7 +1035,7 @@ function paintSavedRelayLists(doc, storage) {
                     return {
                         title: title ? title.value : "",
                         alias: alias ? alias.value : "",
-                        content: editor.value,
+                        content: postedNote(),
                     };
                 }
 
