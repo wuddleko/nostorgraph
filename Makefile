@@ -119,7 +119,7 @@ build: check-docker
 
 up: check-docker
 	@echo "Starting Nostorgraph application..."
-	sudo docker compose up -d
+	sudo docker compose up -d --build
 	@echo "Application started! Access it at:"
 	@echo "  Local: http://localhost:8009"
 	@echo ""
