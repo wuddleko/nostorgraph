@@ -240,6 +240,7 @@ fn a_publish_records_the_refused_relay_and_leaves_out_a_relay_that_did_not_answe
     let script = PublishScript::begin();
     script.refuse("wss://refused.example");
     script.limit("wss://slow.example");
+    script.disconnect("wss://silent.example");
     let started = Instant::now();
     let published = publish_to_relays(
         &[
