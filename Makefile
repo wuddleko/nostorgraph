@@ -1,4 +1,4 @@
-.PHONY: help build up down logs clean dev dev-down dev-logs test restart status onion check-docker install-docker
+.PHONY: help build up down logs clean dev dev-down dev-logs test restart status onion check-docker install-docker cli
 
 # Default target
 help:
@@ -8,6 +8,7 @@ help:
 	@echo "  logs        - View logs"
 	@echo "  status      - Check status"
 	@echo "  onion       - Show .onion URL"
+	@echo "  cli         - Install the ntgraph command"
 	@echo "  clean       - Remove this project's containers, images, and volumes"
 	@echo ""
 	@echo "Docker Management:"
@@ -111,6 +112,10 @@ install-docker-compose:
 	@sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$$(uname -s)-$$(uname -m)" -o /usr/local/bin/docker-compose
 	@sudo chmod +x /usr/local/bin/docker-compose
 	@echo "✅ Docker Compose installed successfully!"
+
+# Install only the ntgraph command into Cargo's bin directory.
+cli:
+	cargo install --path . --bin ntgraph
 
 # Production targets
 build: check-docker

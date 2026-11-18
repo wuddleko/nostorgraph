@@ -68,6 +68,14 @@ State stays in your home directory:
 
 The prebuilt image is `ghcr.io/wuddleko/nostorgraph:latest`. On Debian-style systems without Docker, `./scripts/run` builds the binary and installs a systemd service. More detail: [DOCKER.md](DOCKER.md).
 
+## Open a note locally
+
+```bash
+make cli
+```
+
+`make cli` installs the `ntgraph` command. After that, `ntgraph 'https://nostorgra.ph/<link>'` opens a note on this machine: the command decrypts it locally and your browser shows the result.
+
 ## Name
 `anonymous` + `monograph` + `telegraph` = `nonograph`  
 
