@@ -166,21 +166,7 @@ fn unquote(value: &str) -> Option<String> {
 }
 
 pub(crate) fn relay_key(url: &str) -> Option<String> {
-    let rest = url
-        .get(6..)
-        .filter(|_| url[..6].eq_ignore_ascii_case("wss://"))?;
-    let split = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let host = rest[..split].trim_end_matches('.').to_ascii_lowercase();
-    if host.is_empty() {
-        return None;
-    }
-    let mut tail = &rest[split..];
-    if tail == "/" {
-        tail = "";
-    } else if tail.ends_with('/') {
-        tail = &tail[..tail.len() - 1];
-    }
-    Some(format!("wss://{host}{tail}"))
+    crate::nostr::relay_key(url)
 }
 
 fn hop_names(hops: &str) -> String {

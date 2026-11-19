@@ -20,6 +20,7 @@ fn load_with(config: &crate::config::Config, link: &Link) -> Result<Loaded, Erro
         Err(()) => return Err(Error::Socks),
     };
     crate::nostr::set_relay_socks(socks);
+    crate::nostr::set_socks_username(crate::nostr::relay_url_username);
     match &link.target {
         Target::Long {
             locator,

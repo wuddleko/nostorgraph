@@ -33,7 +33,7 @@ pub(super) fn assign_relay(
     let connector = tls_connector()?;
     let deadline = connect_deadline(deadline);
     let tcp = connect_tcp(proxy, deadline, None)?;
-    socks5_connect(&tcp, &host, port, relay, deadline, None)?;
+    socks5_connect(&tcp, &host, port, &super::socks_username(relay), deadline, None)?;
     let tls = tls_handshake(connector, &host, tcp, deadline, None)?;
     store_held(relay, tls);
     Ok(())
@@ -73,7 +73,7 @@ pub(super) fn next_misses(previous: Option<u32>, circuit: Option<bool>) -> u32 {
 
 fn circuit_seen(paths: Option<&HashMap<String, String>>, relay: &str) -> Option<bool> {
     let paths = paths?;
-    let key = crate::tor_circuits::relay_key(relay)?;
+    let key = super::relay_key(relay)?;
     Some(paths.contains_key(&key))
 }
 
@@ -97,7 +97,7 @@ pub(super) fn relays_needing_assignment(
 }
 
 pub(super) type OpenRelay = Arc<dyn Fn(&str, Duration) + Send + Sync>;
-pub(super) type ReadCircuits = Arc<dyn Fn() -> Option<HashMap<String, String>> + Send + Sync>;
+pub(crate) type ReadCircuits = Arc<dyn Fn() -> Option<HashMap<String, String>> + Send + Sync>;
 
 struct PendingAssignment {
     page: Vec<String>,
@@ -217,7 +217,7 @@ impl RelayPass {
     fn retain_requested(&self, relays: &[String]) {
         let keep: Vec<String> = relays
             .iter()
-            .filter_map(|relay| crate::tor_circuits::relay_key(relay))
+            .filter_map(|relay| super::relay_key(relay))
             .collect();
         self.requested
             .lock()
@@ -229,7 +229,7 @@ impl RelayPass {
         let requested = self.requested.lock().expect("relay circuit pass");
         let mut noted = HashMap::new();
         for relay in relays {
-            let Some(key) = crate::tor_circuits::relay_key(relay) else {
+            let Some(key) = super::relay_key(relay) else {
                 continue;
             };
             let Some(attempt) = requested.get(&key) else {
@@ -244,7 +244,7 @@ impl RelayPass {
     }
 
     pub(super) fn mark_requested(&self, relay: &str, at: Instant, misses: u32) {
-        let Some(key) = crate::tor_circuits::relay_key(relay) else {
+        let Some(key) = super::relay_key(relay) else {
             return;
         };
         self.requested
@@ -261,7 +261,7 @@ impl RelayPass {
 
     #[cfg(test)]
     pub(super) fn remembers(&self, relay: &str) -> bool {
-        let Some(key) = crate::tor_circuits::relay_key(relay) else {
+        let Some(key) = super::relay_key(relay) else {
             return false;
         };
         self.requested
@@ -272,7 +272,7 @@ impl RelayPass {
 
     #[cfg(test)]
     pub(super) fn misses(&self, relay: &str) -> Option<u32> {
-        let key = crate::tor_circuits::relay_key(relay)?;
+        let key = super::relay_key(relay)?;
         self.requested
             .lock()
             .expect("relay circuit pass")
@@ -290,6 +290,7 @@ pub(crate) fn schedule_relay_assignments(
     page: Vec<String>,
     configured: Vec<String>,
     timeout: Duration,
+    circuits: ReadCircuits,
 ) {
     #[cfg(test)]
     if let Some(state) = watched_assignment() {
@@ -305,7 +306,7 @@ pub(crate) fn schedule_relay_assignments(
         });
         return;
     }
-    schedule_relay_assignments_via(page, configured, timeout, relay_socks());
+    schedule_relay_assignments_via(page, configured, timeout, relay_socks(), circuits);
 }
 
 #[cfg(test)]
@@ -595,6 +596,7 @@ pub(super) fn schedule_relay_assignments_via(
     configured: Vec<String>,
     timeout: Duration,
     socks: RelaySocks,
+    circuits: ReadCircuits,
 ) {
     if !matches!(socks, RelaySocks::Proxy(_)) {
         return;
@@ -605,6 +607,5 @@ pub(super) fn schedule_relay_assignments_via(
             eprintln!("Nostorgraph: relay {relay} was not assigned a circuit: {error}");
         }
     });
-    let circuits: ReadCircuits = Arc::new(|| crate::tor_circuits::reported());
     shared_relay_pass().submit(page, configured, timeout, open, circuits);
 }

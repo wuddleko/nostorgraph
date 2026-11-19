@@ -29,7 +29,7 @@ fn held_relays() -> &'static Mutex<HashMap<String, HeldRelay>> {
 }
 
 pub(super) fn take_held(relay: &str) -> Option<HeldTls> {
-    let key = crate::tor_circuits::relay_key(relay)?;
+    let key = super::relay_key(relay)?;
     let mut held = held_relays().lock().expect("held relay");
     let entry = held.remove(&key)?;
     if entry.at.elapsed() >= HELD_RELAY_TTL {
@@ -42,7 +42,7 @@ pub(super) fn take_held(relay: &str) -> Option<HeldTls> {
 }
 
 pub(super) fn store_held(relay: &str, tls: HeldTls) {
-    let Some(key) = crate::tor_circuits::relay_key(relay) else {
+    let Some(key) = super::relay_key(relay) else {
         return;
     };
     let dropped = {
@@ -634,7 +634,7 @@ pub(super) fn with_relay_tls<T>(
     let connector = tls_connector()?;
     if let Some(proxy) = proxy {
         let tcp = connect_tcp(proxy, deadline, cancel)?;
-        socks5_connect(&tcp, &host, port, relay, deadline, cancel)?;
+        socks5_connect(&tcp, &host, port, &super::socks_username(relay), deadline, cancel)?;
         let tls = tls_handshake(connector, &host, tcp, deadline, cancel)?;
         return use_tls(tls);
     }

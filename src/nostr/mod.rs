@@ -100,9 +100,23 @@ pub enum RelaySocks {
 }
 
 static RELAY_SOCKS: Mutex<RelaySocks> = Mutex::new(RelaySocks::Direct);
+static SOCKS_USERNAME: Mutex<fn(&str) -> String> = Mutex::new(relay_url_username);
 
 pub fn set_relay_socks(setting: RelaySocks) {
     *RELAY_SOCKS.lock().expect("relay socks lock") = setting;
+}
+
+pub(crate) fn relay_url_username(url: &str) -> String {
+    url.to_string()
+}
+
+pub(crate) fn set_socks_username(choose: fn(&str) -> String) {
+    *SOCKS_USERNAME.lock().expect("socks username") = choose;
+}
+
+pub(crate) fn socks_username(url: &str) -> String {
+    let choose = *SOCKS_USERNAME.lock().expect("socks username");
+    choose(url)
 }
 
 fn relay_socks() -> RelaySocks {
@@ -800,6 +814,24 @@ pub(crate) fn sealed_locator(locator: &str) -> bool {
         && locator
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+pub(crate) fn relay_key(url: &str) -> Option<String> {
+    let rest = url
+        .get(6..)
+        .filter(|_| url[..6].eq_ignore_ascii_case("wss://"))?;
+    let split = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = rest[..split].trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() {
+        return None;
+    }
+    let mut tail = &rest[split..];
+    if tail == "/" {
+        tail = "";
+    } else if let Some(trimmed) = tail.strip_suffix('/') {
+        tail = trimmed;
+    }
+    Some(format!("wss://{host}{tail}"))
 }
 
 pub(crate) fn sealed_event_id(event_id: &str) -> bool {

@@ -281,6 +281,10 @@ fn install_bundled_pages_from(
     Ok(installed)
 }
 
+fn circuit_socks_username(url: &str) -> String {
+    crate::nostr::relay_key(url).unwrap_or_else(|| url.to_string())
+}
+
 fn startup_socks(config: &Config) -> Result<crate::nostr::RelaySocks, ()> {
     match config.socks_addr()? {
         Some(addr) => Ok(crate::nostr::RelaySocks::Proxy(addr)),
@@ -305,6 +309,7 @@ fn rocket() -> rocket::Rocket<rocket::Build> {
         .limit("string", config.form_data_limit_bytes().bytes())
         .limit("json", json_body_limit(&config).bytes());
 
+    crate::nostr::set_socks_username(circuit_socks_username);
     let socks = match startup_socks(&config) {
         Ok(socks @ crate::nostr::RelaySocks::Proxy(addr)) => {
             crate::nostr::set_relay_socks(socks);

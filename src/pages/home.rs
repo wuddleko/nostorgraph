@@ -739,7 +739,12 @@ pub fn assign_tor_circuits(
         return Status::BadRequest;
     };
     let timeout = relay_timeout(config);
-    crate::nostr::schedule_relay_assignments(relays, Vec::new(), timeout);
+    crate::nostr::schedule_relay_assignments(
+        relays,
+        Vec::new(),
+        timeout,
+        std::sync::Arc::new(|| crate::tor_circuits::reported()),
+    );
     Status::NoContent
 }
 

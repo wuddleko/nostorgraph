@@ -966,6 +966,7 @@ fn direct_relays_are_not_assigned_circuits() {
             Vec::new(),
             Duration::from_secs(30),
             setting,
+            Arc::new(|| None),
         );
         assert!(started.elapsed() < Duration::from_millis(50));
     }

@@ -355,6 +355,7 @@ fn save_relay_list(cookies: &CookieJar<'_>, list: &RelayCookie, config: &Config,
         relays,
         Vec::new(),
         crate::relay_set::relay_timeout(config),
+        std::sync::Arc::new(|| crate::tor_circuits::reported()),
     );
 }
 
