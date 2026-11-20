@@ -230,7 +230,7 @@ fn drop_relay(list: &RelayCookie, url: &str) -> RelayCookie {
 }
 
 fn pin_relay(list: &RelayCookie, url: &str) -> Result<RelayCookie, &'static str> {
-    let Some(canonical) = crate::nostr::canonical_public_relay(url) else {
+    let Some(canonical) = client::canonical_public_relay(url) else {
         return Err(if url.trim().is_empty() {
             "Enter a relay URL."
         } else {
@@ -351,7 +351,7 @@ fn save_relay_list(cookies: &CookieJar<'_>, list: &RelayCookie, config: &Config,
         .cloned()
         .chain(list.dealt.iter().cloned())
         .collect();
-    crate::nostr::schedule_relay_assignments(
+    client::schedule_relay_assignments(
         relays,
         Vec::new(),
         crate::relay_set::relay_timeout(config),

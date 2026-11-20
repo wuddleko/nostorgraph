@@ -129,7 +129,7 @@ fn a_save_error_lets_the_pool_continue() {
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("relay-pool.json");
-    let later = crate::nostr::now_secs() + 15 * 60;
+    let later = client::now_secs() + 15 * 60;
     save(
         &path,
         &Pool {
@@ -263,7 +263,7 @@ fn a_short_pool_starts_the_next_pass_immediately() {
 fn the_first_crawl_keeps_going_while_under_the_goal() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("relay-pool.json");
-    let later = crate::nostr::now_secs() + 5 * 60;
+    let later = client::now_secs() + 5 * 60;
     save(
         &path,
         &Pool {
@@ -624,10 +624,10 @@ struct Saved {
 }
 
 impl RelayRead for Saved {
-    fn read_list(&mut self, _url: &str, deadline: Instant) -> crate::nostr::RelayList {
+    fn read_list(&mut self, _url: &str, deadline: Instant) -> client::RelayList {
         self.calls.push("list");
         self.deadlines.push(deadline);
-        crate::nostr::RelayList {
+        client::RelayList {
             socket_answered: true,
             urls: self.urls.clone(),
         }
@@ -780,7 +780,7 @@ fn a_health_check_does_not_read_the_list() {
 
 #[test]
 fn a_missed_socket_still_returns_the_visit() {
-    let mut hook = CrawlVisit::new(30, crate::nostr::RelaySocks::Disabled, true, false);
+    let mut hook = CrawlVisit::new(30, client::RelaySocks::Disabled, true, false);
     let started = Instant::now();
     let (visit, urls) = hook.visit("wss://warm.example", NOW);
     assert!(started.elapsed() < Duration::from_millis(50));

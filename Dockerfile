@@ -15,10 +15,12 @@ COPY parser ./parser
 COPY page ./page
 COPY nip44 ./nip44
 COPY crawler ./crawler
+COPY client ./client
+COPY ntgraph ./ntgraph
 COPY pdf ./pdf
 COPY src ./src
 
-RUN cargo build --release --locked
+RUN cargo build --release --locked --bin nostorgraph
 
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 

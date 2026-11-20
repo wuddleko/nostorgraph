@@ -133,7 +133,7 @@ pub(super) fn seal_href(address: &SealAddress<'_>) -> String {
     }
     let mut first = true;
     for relay in address.hints {
-        let Some(relay) = crate::nostr::canonical_public_relay(relay) else {
+        let Some(relay) = client::canonical_public_relay(relay) else {
             continue;
         };
         href.push(if first { '?' } else { '&' });

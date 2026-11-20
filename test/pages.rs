@@ -428,7 +428,7 @@ fn rendered_home_switches_the_content_field() {
     assert!(js.contains("data-timeout=\"10000\""));
     assert!(js.contains(&format!(
         "data-seal-max=\"{}\"",
-        crate::seal::sealed_payload_max(
+        client::sealed_payload_max(
             config.limits.title_max_length,
             config.limits.alias_max_length,
             config.limits.content_max_length,
@@ -1106,8 +1106,8 @@ fn sealed_shell_keeps_the_note_out_of_the_title_and_preview() {
     assert!(!html.contains("location.href"));
     assert!(!html.contains("location.hash"));
     assert!(!html.contains("</script><script"));
-    assert!(crate::nostr::sealed_locator("0123456789abcdef0123"));
-    assert!(!crate::nostr::sealed_locator("0123456789ABCDEF0123"));
+    assert!(client::sealed_locator("0123456789abcdef0123"));
+    assert!(!client::sealed_locator("0123456789ABCDEF0123"));
     let nostr = include_str!("../templates/nostr.js");
     let sign = nostr.find("async function schnorrSign(").unwrap();
     let verify = nostr.find("async function schnorrVerify(").unwrap();
@@ -1489,7 +1489,7 @@ fn a_fetch_list_returns_only_the_link_relay() {
         many.push(format!("wss://link{index}.example"));
     }
     let capped = public_relays(&many);
-    assert_eq!(capped.len(), crate::nostr::MAX_FETCH_RELAYS);
+    assert_eq!(capped.len(), client::MAX_FETCH_RELAYS);
     assert_eq!(capped[0], "wss://link0.example");
     assert_eq!(capped[5], "wss://link5.example");
     assert!(!capped.iter().any(|relay| relay.contains(configured)));
@@ -1531,8 +1531,8 @@ fn a_fetch_with_dead_link_relays_reads_from_a_usable_row() {
     )
     .unwrap();
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_sealed_note("kept", locator, 1_700_000_000);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let note = client::sign_sealed_note("kept", locator, 1_700_000_000);
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://row.example", &note.event_json);
     let event_id = note.id_hex();
     let started = std::time::Instant::now();
@@ -1599,8 +1599,8 @@ fn a_fetch_whose_link_relay_has_the_note_does_not_read_the_fixture_row() {
     )
     .unwrap();
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_sealed_note("kept", locator, 1_700_000_000);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let note = client::sign_sealed_note("kept", locator, 1_700_000_000);
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://live.example", &note.event_json);
     answers.answer("wss://row.example", "pool-note");
     let event_id = note.id_hex();
@@ -1654,8 +1654,8 @@ fn a_long_link_asks_every_named_relay_and_a_seventh_can_come_from_the_pool() {
     )
     .unwrap();
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_sealed_note("kept", locator, 1_700_000_000);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let note = client::sign_sealed_note("kept", locator, 1_700_000_000);
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://row.example", &note.event_json);
     let event_id = note.id_hex();
     assert_eq!(
@@ -1688,7 +1688,7 @@ fn a_long_link_asks_every_named_relay_and_a_seventh_can_come_from_the_pool() {
         .map(|index| format!("wss://miss{index}.example"))
         .chain(["wss://row.example".to_string()])
         .collect();
-    let again = crate::nostr::RelayAnswer::begin();
+    let again = client::RelayAnswer::begin();
     again.answer("wss://row.example", &note.event_json);
     assert_eq!(
         fetch_sealed_by_id(
@@ -1736,7 +1736,7 @@ fn public_fetch_drops_private_hints_and_caps_relays() {
         hints.push(format!("wss://hint{index}.example"));
     }
     let relays = public_relays(&hints);
-    assert_eq!(relays.len(), crate::nostr::MAX_FETCH_RELAYS);
+    assert_eq!(relays.len(), client::MAX_FETCH_RELAYS);
     assert_eq!(relays[0], "wss://hint0.example");
     assert_eq!(relays.last().unwrap(), "wss://hint5.example");
     assert!(!relays.iter().any(|relay| relay.contains("127.0.0.1")));
@@ -1750,7 +1750,7 @@ fn public_fetch_uses_every_hint_slot_when_the_instance_has_no_public_relay() {
         hints.push(format!("wss://hint{index}.example"));
     }
     let relays = public_relays(&hints);
-    assert_eq!(relays.len(), crate::nostr::MAX_FETCH_RELAYS);
+    assert_eq!(relays.len(), client::MAX_FETCH_RELAYS);
     assert_eq!(relays[0], "wss://hint0.example");
     assert_eq!(relays[5], "wss://hint5.example");
     assert!(!relays.contains(&"wss://127.0.0.1".to_string()));
@@ -1839,9 +1839,9 @@ fn nojs_post_writes_no_file_and_redirects_with_the_key_or_an_error() {
     assert!(std::fs::read_dir(temp.path().join("content")).is_err());
     let link = seal_link_parts(&href);
     assert_eq!(link.query, "r=wss%3A%2F%2Finstance.example", "{href}");
-    assert!(crate::nostr::sealed_locator(&link.locator), "{href}");
+    assert!(client::sealed_locator(&link.locator), "{href}");
     assert!(
-        crate::nostr::sealed_event_id(link.event_id.as_deref().unwrap_or("")),
+        client::sealed_event_id(link.event_id.as_deref().unwrap_or("")),
         "{href}"
     );
     assert!(is_seal_key(&link.key), "{href}");
@@ -1888,9 +1888,9 @@ fn nojs_post_writes_no_file_and_redirects_with_the_key_or_an_error() {
     );
     assert!(std::fs::read_dir(temp.path().join("content")).is_err());
     let link = seal_link_parts(&href);
-    assert!(crate::nostr::sealed_locator(&link.locator), "{href}");
+    assert!(client::sealed_locator(&link.locator), "{href}");
     assert!(
-        crate::nostr::sealed_event_id(link.event_id.as_deref().unwrap_or("")),
+        client::sealed_event_id(link.event_id.as_deref().unwrap_or("")),
         "{href}"
     );
     assert!(is_seal_key(&link.key), "{href}");
@@ -2190,7 +2190,7 @@ fn a_note_at_the_plaintext_cap_seals_and_an_over_cap_payload_keeps_the_error() {
     set_nojs_test_accepted(Some(vec!["wss://relay.primal.net".to_string()]));
     let relays = pinned_relays(&["wss://relay.primal.net"]);
     let published = publish_nojs_note_with_cookie(&form, &config, Some(&relays)).unwrap();
-    let cap = crate::seal::sealed_payload_max(
+    let cap = client::sealed_payload_max(
         config.limits.title_max_length,
         config.limits.alias_max_length,
         config.limits.content_max_length,
@@ -2254,7 +2254,7 @@ fn assert_nojs_error(form: &NewPost, config: &crate::config::Config, error: &str
 
 #[test]
 fn nostr_publish_keeps_public_relays_and_drops_private_ones() {
-    let note = crate::nostr::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
+    let note = client::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
     let event: serde_json::Value = serde_json::from_str(&note.event_json).unwrap();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -2299,7 +2299,7 @@ fn nostr_publish_keeps_public_relays_and_drops_private_ones() {
 #[test]
 fn nostr_publish_refuses_a_clear_long_form_note() {
     let keypair = secp256k1::Keypair::new(secp256k1::SECP256K1, &mut rand::thread_rng());
-    let note = crate::nostr::signed_event(
+    let note = client::signed_event(
         &keypair,
         1_700_000_000,
         30023,
@@ -2325,7 +2325,7 @@ fn nostr_publish_refuses_a_clear_long_form_note() {
 
 #[test]
 fn nostr_publish_accepts_a_sealed_note_that_passes_the_stamp() {
-    let note = crate::nostr::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
+    let note = client::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
     let event: serde_json::Value = serde_json::from_str(&note.event_json).unwrap();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -2347,13 +2347,13 @@ fn nostr_publish_accepts_a_sealed_note_that_passes_the_stamp() {
     assert!(!parsed.event_json.contains("\"title\""));
 
     config.limits.content_max_length = 4;
-    let max = crate::seal::sealed_payload_max(
+    let max = client::sealed_payload_max(
         config.limits.title_max_length,
         config.limits.alias_max_length,
         config.limits.content_max_length,
     );
     let long =
-        crate::nostr::sign_sealed_note(&"x".repeat(max + 1), "0123456789abcdef0123", 1_700_000_000);
+        client::sign_sealed_note(&"x".repeat(max + 1), "0123456789abcdef0123", 1_700_000_000);
     let long_event: serde_json::Value = serde_json::from_str(&long.event_json).unwrap();
     let long_body = NostrPublishBody {
         event: long_event,
@@ -2640,7 +2640,7 @@ fn copying_the_title_link_saves_the_slug_and_the_open_stays_there() {
     let first = "0123456789abcdef0123";
     let second = "fedcba9876543210abcd";
     let third = "00112233445566778899";
-    let note = crate::nostr::sign_sealed_note("kept", first, 1_700_000_000);
+    let note = client::sign_sealed_note("kept", first, 1_700_000_000);
     let event_id = note.id_hex();
     let other_id = "ab".repeat(32);
     let mut config = crate::config::Config::default();
@@ -2738,7 +2738,7 @@ fn copying_the_title_link_saves_the_slug_and_the_open_stays_there() {
 
     set_nojs_test_fetch(NojsTestFetch::Live);
     NOJS_RECORD_HINTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://saved.example", &note.event_json);
     let page = client.get("/t/Hello").dispatch();
     assert_eq!(page.status(), Status::Ok);
@@ -2833,7 +2833,7 @@ fn a_multibyte_title_opens_and_a_failed_save_leaves_nothing() {
     let _blocked_rows = super::seal_row::SealRowDirGuard::set(blocked.path());
     std::fs::write(blocked.path().join("seal-rows"), b"blocked").unwrap();
     let blocked_locator = "c4c4c4c4c4c4c4c4c4c4";
-    let blocked_note = crate::nostr::sign_sealed_note("kept", blocked_locator, 1_700_000_000);
+    let blocked_note = client::sign_sealed_note("kept", blocked_locator, 1_700_000_000);
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
     let client = rocket::local::blocking::Client::tracked(
@@ -2876,9 +2876,9 @@ fn a_multibyte_title_opens_and_a_failed_save_leaves_nothing() {
     let third = "c3c3c3c3c3c3c3c3c3c3";
     let short_title = "字".repeat(49);
     let long_title = "字".repeat(128);
-    let first_note = crate::nostr::sign_sealed_note("kept", first, 1_700_000_000);
-    let second_note = crate::nostr::sign_sealed_note("kept", second, 1_700_000_000);
-    let third_note = crate::nostr::sign_sealed_note("kept", third, 1_700_000_000);
+    let first_note = client::sign_sealed_note("kept", first, 1_700_000_000);
+    let second_note = client::sign_sealed_note("kept", second, 1_700_000_000);
+    let third_note = client::sign_sealed_note("kept", third, 1_700_000_000);
     let private = post("Hello", first, &first_note.id_hex(), "wss://127.0.0.1");
     assert_eq!(private.status(), Status::BadRequest);
     assert!(names(&dir.path().join("title-slugs")).is_empty());
@@ -2930,7 +2930,7 @@ fn a_multibyte_title_opens_and_a_failed_save_leaves_nothing() {
 
     set_nojs_test_fetch(NojsTestFetch::Live);
     NOJS_RECORD_HINTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://saved.example", &first_note.event_json);
     answers.answer("wss://other.example", &second_note.event_json);
     answers.answer("wss://third.example", &third_note.event_json);
@@ -2965,9 +2965,9 @@ fn a_root_address_opens_the_note_and_a_site_page_stays() {
     let long_locator = "a1a1a1a1a1a1a1a1a1a1";
     let short_locator = "b2b2b2b2b2b2b2b2b2b2";
     let title_locator = "c3c3c3c3c3c3c3c3c3c3";
-    let long_note = crate::nostr::sign_sealed_note("kept", long_locator, 1_700_000_000);
-    let short_note = crate::nostr::sign_sealed_note("kept", short_locator, 1_700_000_000);
-    let title_note = crate::nostr::sign_sealed_note("kept", title_locator, 1_700_000_000);
+    let long_note = client::sign_sealed_note("kept", long_locator, 1_700_000_000);
+    let short_note = client::sign_sealed_note("kept", short_locator, 1_700_000_000);
+    let title_note = client::sign_sealed_note("kept", title_locator, 1_700_000_000);
     let long_id = long_note.id_hex();
     lock_for(short_locator);
     super::seal_row::remember(
@@ -3041,7 +3041,7 @@ fn a_root_address_opens_the_note_and_a_site_page_stays() {
 
     set_nojs_test_fetch(NojsTestFetch::Live);
     NOJS_RECORD_HINTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://hint.example", &long_note.event_json);
     answers.answer("wss://saved.example", &short_note.event_json);
     answers.answer("wss://title.example", &title_note.event_json);
@@ -3183,9 +3183,9 @@ fn a_reserved_title_takes_the_next_slug_and_an_old_one_stays() {
     let other = "cccccccccccccccccccc";
     let hex = "dddddddddddddddddddd";
     let hex_title = "0123456789abcdef0123";
-    let old_note = crate::nostr::sign_sealed_note("kept", old, 1_700_000_000);
-    let fresh_note = crate::nostr::sign_sealed_note("kept", fresh, 1_700_000_000);
-    let hex_note = crate::nostr::sign_sealed_note("kept", hex, 1_700_000_000);
+    let old_note = client::sign_sealed_note("kept", old, 1_700_000_000);
+    let fresh_note = client::sign_sealed_note("kept", fresh, 1_700_000_000);
+    let hex_note = client::sign_sealed_note("kept", hex, 1_700_000_000);
     let event_id = "ab".repeat(32);
     let save = |title: &str, locator: &str, id: &str, relay: &str| {
         lock_for(locator);
@@ -3277,7 +3277,7 @@ fn a_reserved_title_takes_the_next_slug_and_an_old_one_stays() {
     .unwrap();
     set_nojs_test_fetch(NojsTestFetch::Live);
     NOJS_RECORD_HINTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://old.example", &old_note.event_json);
     answers.answer("wss://new.example", &fresh_note.event_json);
     answers.answer("wss://hex.example", &hex_note.event_json);
@@ -3344,7 +3344,7 @@ fn copying_the_short_link_saves_a_locator_row_and_the_open_uses_it() {
     let dir = tempfile::tempdir().unwrap();
     let _rows = super::seal_row::SealRowDirGuard::set(dir.path());
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_sealed_note("kept", locator, 1_700_000_000);
+    let note = client::sign_sealed_note("kept", locator, 1_700_000_000);
     let event_id = note.id_hex();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -3432,7 +3432,7 @@ fn copying_the_short_link_saves_a_locator_row_and_the_open_uses_it() {
 
     set_nojs_test_fetch(NojsTestFetch::Live);
     NOJS_RECORD_HINTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://saved.example", &note.event_json);
     let page = client.get(format!("/s/{locator}")).dispatch();
     assert_eq!(page.status(), Status::Ok);
@@ -3450,7 +3450,7 @@ fn copying_the_short_link_saves_a_locator_row_and_the_open_uses_it() {
         vec!["wss://saved.example".to_string()]
     );
     let other = "fedcba9876543210abcd";
-    let other_note = crate::nostr::sign_sealed_note("other", other, 1_700_000_000);
+    let other_note = client::sign_sealed_note("other", other, 1_700_000_000);
     answers.answer("wss://saved.example", &other_note.event_json);
     let unsaved = client
         .get(format!("/s/{other}?r=wss%3A%2F%2Fsaved.example"))
@@ -3497,7 +3497,7 @@ fn copying_the_short_link_still_allows_the_title_link() {
     let dir = tempfile::tempdir().unwrap();
     let _rows = super::seal_row::SealRowDirGuard::set(dir.path());
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_sealed_note("kept", locator, 1_700_000_000);
+    let note = client::sign_sealed_note("kept", locator, 1_700_000_000);
     let event_id = note.id_hex();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -3558,7 +3558,7 @@ fn copying_the_short_link_still_allows_the_title_link() {
 
     set_nojs_test_fetch(NojsTestFetch::Live);
     NOJS_RECORD_HINTS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let answers = crate::nostr::RelayAnswer::begin();
+    let answers = client::RelayAnswer::begin();
     answers.answer("wss://saved.example", &note.event_json);
     let page = client.get("/t/Hello").dispatch();
     assert_eq!(page.status(), Status::Ok);
@@ -3687,7 +3687,7 @@ fn a_refused_publish_stores_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let _rows = super::seal_row::SealRowDirGuard::set(dir.path());
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_v2_note(locator, 1_700_000_000);
+    let note = client::sign_v2_note(locator, 1_700_000_000);
     let event = serde_json::from_str(&note.event_json).unwrap();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -3697,7 +3697,7 @@ fn a_refused_publish_stores_nothing() {
         seal_claim: String::new(),
         csrf_token: String::new(),
     };
-    let script = crate::nostr::PublishScript::begin();
+    let script = client::PublishScript::begin();
     script.refuse("wss://marked.example");
     let result = publish_sealed_note(&body, &config, "").unwrap();
     drop(script);
@@ -3713,7 +3713,7 @@ fn a_refused_publish_stores_nothing() {
 #[serial(publish_script)]
 fn one_accepted_relay_keeps_the_note_and_names_the_misses() {
     let locator = "0123456789abcdef0123";
-    let note = crate::nostr::sign_v2_note(locator, 1_700_000_000);
+    let note = client::sign_v2_note(locator, 1_700_000_000);
     let event = serde_json::from_str(&note.event_json).unwrap();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -3727,7 +3727,7 @@ fn one_accepted_relay_keeps_the_note_and_names_the_misses() {
         seal_claim: String::new(),
         csrf_token: String::new(),
     };
-    let script = crate::nostr::PublishScript::begin();
+    let script = client::PublishScript::begin();
     script.accept("wss://landed.example");
     script.time_out("wss://slow.example");
     script.disconnect("wss://down.example");
@@ -3817,7 +3817,7 @@ fn a_refused_publish_marks_the_pool_row_and_leaves_the_pinned_relay() {
         csrf_token: String::new(),
     };
 
-    let script = crate::nostr::PublishScript::begin();
+    let script = client::PublishScript::begin();
     script.refuse("wss://pool.example");
     script.refuse("wss://hand.example");
     script.limit("wss://slow.example");
@@ -3853,7 +3853,7 @@ fn a_refused_publish_marks_the_pool_row_and_leaves_the_pinned_relay() {
     assert!(!pool.rows.iter().any(|row| row.url == "wss://hand.example"));
     assert_eq!(super::relays::read_relay_cookie(Some(&cookie)), list);
 
-    let note = crate::nostr::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
+    let note = client::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
     let event = serde_json::from_str(&note.event_json).unwrap();
     let body = NostrPublishBody {
         event,
@@ -3861,7 +3861,7 @@ fn a_refused_publish_marks_the_pool_row_and_leaves_the_pinned_relay() {
         seal_claim: String::new(),
         csrf_token: String::new(),
     };
-    let script = crate::nostr::PublishScript::begin();
+    let script = client::PublishScript::begin();
     script.accept("wss://marked.example");
     let result = publish_sealed_note(&body, &config, "").unwrap();
     assert_eq!(result.accepted, vec!["wss://marked.example".to_string()]);
@@ -3897,7 +3897,7 @@ fn a_refused_publish_marks_the_pool_row_and_leaves_the_pinned_relay() {
 
 #[test]
 fn nostr_publish_sends_the_saved_relays_and_leaves_out_configured_names() {
-    let note = crate::nostr::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
+    let note = client::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
     let event: serde_json::Value = serde_json::from_str(&note.event_json).unwrap();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -3962,7 +3962,7 @@ fn a_circuit_post_assigns_the_body_and_leaves_out_the_configured_name() {
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
     config.nostr.relays = vec!["wss://config.example".to_string()];
-    let watch = crate::nostr::RelayAssignmentWatch::begin(&[
+    let watch = client::RelayAssignmentWatch::begin(&[
         "wss://kept.example",
         "wss://stay.example",
         "wss://config.example",
@@ -4016,7 +4016,7 @@ fn relays_to_assign_follow_a_publish() {
         page.push(format!("wss://extra{n}.example"));
     }
     let chosen = relays_to_assign(&page, &configured);
-    assert!(chosen.len() <= crate::nostr::MAX_FETCH_RELAYS);
+    assert!(chosen.len() <= client::MAX_FETCH_RELAYS);
     assert!(chosen.starts_with(&configured));
     assert!(chosen.iter().all(|relay| !relay.contains("127.0.0.1")));
     assert_eq!(
@@ -4520,7 +4520,7 @@ fn the_homepage_omits_the_configured_names() {
     assert_eq!(js.get("nostr_timeout_ms").unwrap(), "10000");
     assert_eq!(
         js.get("seal_max").unwrap(),
-        &crate::seal::sealed_payload_max(
+        &client::sealed_payload_max(
             config.limits.title_max_length,
             config.limits.alias_max_length,
             config.limits.content_max_length,
@@ -6004,11 +6004,11 @@ fn nojs_create_builds_the_public_relay_list_and_fails_when_it_is_empty() {
     );
 
     let mut many = Vec::new();
-    for index in 0..crate::nostr::MAX_FETCH_RELAYS + 2 {
+    for index in 0..client::MAX_FETCH_RELAYS + 2 {
         many.push(format!("wss://saved{index}.example"));
     }
     let published = nojs_publish_relays(&many).unwrap();
-    assert_eq!(published.len(), crate::nostr::MAX_FETCH_RELAYS);
+    assert_eq!(published.len(), client::MAX_FETCH_RELAYS);
     assert_eq!(published[0], "wss://saved0.example");
     assert!(!published.iter().any(|relay| relay.contains("saved6")));
     assert!(nojs_publish_relays(&["wss://127.0.0.1".to_string()]).is_none());
@@ -6200,7 +6200,7 @@ async function loadNostr() {
     );
     run_javascript("nostorgraph-empty-saved", &program);
 
-    let note = crate::nostr::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
+    let note = client::sign_v2_note("0123456789abcdef0123", 1_700_000_000);
     let event: serde_json::Value = serde_json::from_str(&note.event_json).unwrap();
     let mut config = crate::config::Config::default();
     config.security.csrf_protection_enabled = false;
@@ -6269,7 +6269,7 @@ fn nojs_create_seals_and_publishes_inside_the_blocking_task() {
         Ok(published) => published,
         Err(error) => panic!("seal and publish did not run: {error}"),
     };
-    assert!(crate::nostr::sealed_locator(&published.locator));
+    assert!(client::sealed_locator(&published.locator));
     assert_ne!(published.payload, form.content);
     assert!(published.payload.len() > form.content.len());
     assert!(published.accepted.is_empty());

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use sha2::{Digest, Sha256};
 
-use crate::nostr::hex_encode;
+use client::hex_encode;
 
 const TITLE_TAG: &str = "nostorgraph-title-file-v1";
 const SLUG_CHARS: usize = 128;
@@ -79,7 +79,7 @@ pub(crate) fn locator_for(slug: &str) -> Option<String> {
     }
     let text = std::fs::read_to_string(slug_path(slug)).ok()?;
     let locator = text.trim();
-    if crate::nostr::sealed_locator(locator) {
+    if client::sealed_locator(locator) {
         Some(locator.to_string())
     } else {
         None
@@ -132,7 +132,7 @@ pub(super) fn slugify(title: &str) -> Option<String> {
 }
 
 pub(super) fn slug_blocked(slug: &str) -> bool {
-    if crate::nostr::sealed_locator(slug) {
+    if client::sealed_locator(slug) {
         return true;
     }
     const PAGES: &[&str] = &[

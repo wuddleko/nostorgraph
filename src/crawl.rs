@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime};
 use crawler::{due, edit_pool, read_pool, run_batch, Queue, Row, Visit, VisitHook};
 use serde_json::Value;
 
-use crate::nostr::{fetch_nip11, probe_kind, read_relay_list, RelayList, RelaySocks};
+use client::{fetch_nip11, probe_kind, read_relay_list, RelayList, RelaySocks};
 
 pub(crate) const DOORS: [&str; 3] = [
     "wss://relay.primal.net",
@@ -104,13 +104,13 @@ where
 {
     let boot = Instant::now();
     loop {
-        let now = crate::nostr::now_secs();
+        let now = client::now_secs();
         eprintln!("Nostorgraph: {}", crawl_start_line(path));
         let crawled = crawl(now);
         if let Err(error) = &crawled {
             eprintln!("Nostorgraph: relay pool was not saved: {error}");
         }
-        let now = crate::nostr::now_secs();
+        let now = client::now_secs();
         let wait = match &crawled {
             Err(error) if error.kind() == io::ErrorKind::InvalidData => BAD_FILE_WAIT,
             Err(_) => pool_file_wait(path, now).max(SAVE_RETRY),
@@ -527,7 +527,7 @@ pub(crate) fn candidates(path: &Path, configured: &[String]) -> Vec<String> {
 fn configured_relays(configured: &[String]) -> Vec<String> {
     let mut urls = Vec::new();
     for relay in configured {
-        let Some(relay) = crate::nostr::canonical_public_relay(relay) else {
+        let Some(relay) = client::canonical_public_relay(relay) else {
             continue;
         };
         if urls.iter().any(|have| have == &relay) || urls.len() == CANDIDATE_CAP {
@@ -557,7 +557,7 @@ pub(crate) fn mark_publish(path: &Path, refused: &[String], accepted: &[String])
 
 fn pool_url_listed(url: &str, urls: &[String]) -> bool {
     urls.iter()
-        .any(|raw| crate::nostr::same_public_relay(raw, url))
+        .any(|raw| client::same_public_relay(raw, url))
 }
 
 pub(crate) fn next_pool_relays(path: &Path, link: &[String]) -> Vec<String> {
@@ -568,7 +568,7 @@ pub(crate) fn next_pool_relays(path: &Path, link: &[String]) -> Vec<String> {
         }
         if link
             .iter()
-            .any(|have| crate::nostr::same_public_relay(have, &row.url))
+            .any(|have| client::same_public_relay(have, &row.url))
         {
             continue;
         }

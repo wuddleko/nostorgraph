@@ -531,7 +531,7 @@ fn a_form_assigns_the_relays_that_remain_and_drops_the_one_that_left() {
             "wss://left.example".to_string(),
         ],
     };
-    let watch = crate::nostr::RelayAssignmentWatch::begin(&[
+    let watch = client::RelayAssignmentWatch::begin(&[
         "wss://kept.example",
         "wss://stay.example",
         "wss://left.example",

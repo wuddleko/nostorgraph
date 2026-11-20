@@ -150,7 +150,7 @@ fn home_form_context(
     );
     context.insert(
         "seal_max".to_string(),
-        crate::seal::sealed_payload_max(
+        client::sealed_payload_max(
             config.limits.title_max_length,
             config.limits.alias_max_length,
             config.limits.content_max_length,
@@ -435,7 +435,7 @@ pub(super) fn publish_nojs_note_with_cookie(
     };
     let landed = accepted
         .iter()
-        .any(|relay| crate::nostr::canonical_public_relay(relay).is_some());
+        .any(|relay| client::canonical_public_relay(relay).is_some());
     if !landed && matches!(locked, super::seal_row::LockPut::Created) {
         super::seal_row::release_lock(&locator);
     }
@@ -458,7 +458,7 @@ pub(super) fn publish_nojs_note_with_cookie(
 pub(super) fn nojs_sealed_location(published: &NojsPublished) -> Option<String> {
     if published.k.is_empty()
         || published.locator.is_empty()
-        || !crate::nostr::sealed_event_id(&published.event_id)
+        || !client::sealed_event_id(&published.event_id)
     {
         return None;
     }
@@ -648,11 +648,11 @@ pub(crate) fn note_and_relays_for_publish(
     body: &NostrPublishBody,
     config: &Config,
     csrf_cookie: &str,
-) -> Option<(crate::nostr::SignedNote, Vec<String>, String)> {
+) -> Option<(client::SignedNote, Vec<String>, String)> {
     if csrf_failure(config, &body.csrf_token, csrf_cookie).is_some() {
         return None;
     }
-    let (note, locator) = crate::nostr::sealed_note_from_json(
+    let (note, locator) = client::sealed_note_from_json(
         &body.event,
         config.limits.title_max_length,
         config.limits.alias_max_length,
@@ -668,12 +668,12 @@ pub(crate) fn note_and_relays_for_publish(
 pub(super) fn publish_result(
     locator: String,
     accepted: Vec<String>,
-    missed: &[crate::nostr::RelayAttempt],
+    missed: &[client::RelayAttempt],
 ) -> NostrPublishResult {
     let hints = public_relays(&accepted);
     let locator = if accepted
         .iter()
-        .any(|relay| crate::nostr::canonical_public_relay(relay).is_some())
+        .any(|relay| client::canonical_public_relay(relay).is_some())
     {
         locator
     } else {
@@ -701,7 +701,7 @@ pub(super) fn publish_result(
 
 #[get("/tor-circuits")]
 pub fn tor_circuits() -> Json<serde_json::Value> {
-    let (tracking, relays) = crate::tor_circuits::view(crate::nostr::relays_use_proxy());
+    let (tracking, relays) = crate::tor_circuits::view(client::relays_use_proxy());
     Json(serde_json::json!({
         "tracking": tracking,
         "relays": relays,
@@ -739,7 +739,7 @@ pub fn assign_tor_circuits(
         return Status::BadRequest;
     };
     let timeout = relay_timeout(config);
-    crate::nostr::schedule_relay_assignments(
+    client::schedule_relay_assignments(
         relays,
         Vec::new(),
         timeout,
@@ -750,10 +750,10 @@ pub fn assign_tor_circuits(
 
 fn publish_and_record(
     relays: &[String],
-    note: &crate::nostr::SignedNote,
+    note: &client::SignedNote,
     timeout: std::time::Duration,
-) -> crate::nostr::PublishedRelays {
-    let published = crate::nostr::publish_to_relays(relays, note, timeout);
+) -> client::PublishedRelays {
+    let published = client::publish_to_relays(relays, note, timeout);
     record_published(&published.refused, &published.accepted);
     published
 }

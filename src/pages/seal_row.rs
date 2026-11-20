@@ -9,7 +9,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::nostr::hex_encode;
+use client::hex_encode;
 use crate::relay_set::public_relays;
 
 const FILE_TAG: &str = "nostorgraph-locator-file-v1";
@@ -74,8 +74,8 @@ fn row_dir() -> PathBuf {
 }
 
 pub(crate) fn storable(locator: &str, event_id: &str, relays: &[String]) -> bool {
-    crate::nostr::sealed_locator(locator)
-        && crate::nostr::sealed_event_id(event_id)
+    client::sealed_locator(locator)
+        && client::sealed_event_id(event_id)
         && !public_relays(relays).is_empty()
 }
 
@@ -94,7 +94,7 @@ pub(crate) enum LockPut {
 
 /// Records a hash of the claim for this locator. The event id and the relays are not stored.
 pub(crate) fn lock_claim(locator: &str, claim: &str) -> LockPut {
-    if !crate::nostr::sealed_locator(locator) {
+    if !client::sealed_locator(locator) {
         return LockPut::Rejected;
     }
     let Some(raw) = parse_claim(claim) else {
@@ -148,7 +148,7 @@ pub(crate) fn lock_claim(locator: &str, claim: &str) -> LockPut {
 }
 
 pub(crate) fn release_lock(locator: &str) {
-    if !crate::nostr::sealed_locator(locator) {
+    if !client::sealed_locator(locator) {
         return;
     }
     let _ = std::fs::remove_file(lock_dir().join(lock_file_name(locator)));
@@ -202,8 +202,8 @@ pub(crate) fn remember(
 ) -> Result<(), ()> {
     let claim_hash = hash_claim(&parse_claim(claim).ok_or(())?);
     let relays_now = public_relays(relays);
-    if !crate::nostr::sealed_locator(locator)
-        || !crate::nostr::sealed_event_id(event_id)
+    if !client::sealed_locator(locator)
+        || !client::sealed_event_id(event_id)
         || relays_now.is_empty()
     {
         return Err(());
@@ -272,7 +272,7 @@ pub(crate) fn read(locator: &str) -> Option<LocatorRow> {
 }
 
 fn read_seal(locator: &str) -> Option<StoredSeal> {
-    if !crate::nostr::sealed_locator(locator) {
+    if !client::sealed_locator(locator) {
         return None;
     }
     let name = hex_encode(&tagged_hash(FILE_TAG, locator));
@@ -281,7 +281,7 @@ fn read_seal(locator: &str) -> Option<StoredSeal> {
     let key = tagged_hash(KEY_TAG, locator);
     let plain = nostorgraph_nip44::decrypt(payload, &key).ok()?;
     let mut stored: StoredSeal = serde_json::from_str(&plain).ok()?;
-    if !crate::nostr::sealed_event_id(&stored.event_id) {
+    if !client::sealed_event_id(&stored.event_id) {
         return None;
     }
     stored.relays = public_relays(&stored.relays);
@@ -315,8 +315,8 @@ pub(super) fn claim_matches(locator: &str, event_id: &str, relays: &[String], cl
     };
     let relays_now = public_relays(relays);
     if relays_now.is_empty()
-        || !crate::nostr::sealed_locator(locator)
-        || !crate::nostr::sealed_event_id(event_id)
+        || !client::sealed_locator(locator)
+        || !client::sealed_event_id(event_id)
     {
         return false;
     }
@@ -327,7 +327,7 @@ pub(super) fn claim_matches(locator: &str, event_id: &str, relays: &[String], cl
 }
 
 fn parse_claim(claim: &str) -> Option<[u8; 32]> {
-    crate::nostr::decode_fixed_hex(claim)
+    client::decode_fixed_hex(claim)
 }
 
 fn tagged_hash(tag: &str, locator: &str) -> [u8; 32] {

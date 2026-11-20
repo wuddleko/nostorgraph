@@ -96,7 +96,7 @@ fn sealed_shell_for(events: &[String], config: &Config, locator: Option<&str>) -
     };
     let event = sealed_event_markup(events, version);
     let locator_mark = match locator {
-        Some(locator) if crate::nostr::sealed_locator(locator) => {
+        Some(locator) if client::sealed_locator(locator) => {
             format!(r#"<div id="sealed-locator" hidden>{locator}</div>"#)
         }
         _ => String::new(),
@@ -179,7 +179,7 @@ pub async fn root_link_view(
     hints: SealHints,
     config: &State<Config>,
 ) -> Result<content::RawHtml<String>, ViewErr> {
-    if crate::nostr::sealed_locator(segment) {
+    if client::sealed_locator(segment) {
         return sealed_locator_view(segment, hints, config).await;
     }
     title_view(segment, config).await
@@ -201,7 +201,7 @@ pub async fn sealed_locator_view(
     hints: SealHints,
     config: &State<Config>,
 ) -> Result<content::RawHtml<String>, ViewErr> {
-    if !crate::nostr::sealed_locator(locator) {
+    if !client::sealed_locator(locator) {
         return Err(sealed_not_found());
     }
     open_sealed(locator.to_string(), None, hints.r, config, false).await
@@ -214,7 +214,7 @@ pub async fn sealed_view(
     hints: SealHints,
     config: &State<Config>,
 ) -> Result<content::RawHtml<String>, ViewErr> {
-    if !crate::nostr::sealed_locator(locator) || !crate::nostr::sealed_event_id(event_id) {
+    if !client::sealed_locator(locator) || !client::sealed_event_id(event_id) {
         return Err(sealed_not_found());
     }
     open_sealed(
@@ -396,7 +396,7 @@ impl<'r, 'o: 'r, R: Responder<'r, 'o>> Responder<'r, 'o> for NojsSealedHeaders<R
 pub fn nojs_sealed_locator_view(
     locator: &str,
 ) -> NojsSealedHeaders<Result<content::RawHtml<String>, ViewErr>> {
-    if !crate::nostr::sealed_locator(locator) {
+    if !client::sealed_locator(locator) {
         return NojsSealedHeaders(Err(nojs_not_found()));
     }
     NojsSealedHeaders(Ok(content::RawHtml(run_locally_page())))
@@ -407,7 +407,7 @@ pub fn nojs_sealed_view(
     locator: &str,
     event_id: &str,
 ) -> NojsSealedHeaders<Result<content::RawHtml<String>, ViewErr>> {
-    if !crate::nostr::sealed_locator(locator) || !crate::nostr::sealed_event_id(event_id) {
+    if !client::sealed_locator(locator) || !client::sealed_event_id(event_id) {
         return NojsSealedHeaders(Err(nojs_not_found()));
     }
     NojsSealedHeaders(Ok(content::RawHtml(run_locally_page())))
@@ -424,7 +424,7 @@ pub(crate) fn fetch_sealed_by_id(
     pool: &Path,
 ) -> Option<String> {
     let relays = public_relays(hints);
-    if let Some(note) = crate::nostr::fetch_sealed(
+    if let Some(note) = client::fetch_sealed(
         &relays,
         event_id,
         locator,
@@ -437,7 +437,7 @@ pub(crate) fn fetch_sealed_by_id(
     }
     // Relays past the six were not queried. Leave them eligible for the pool.
     let rows = crate::crawl::next_pool_relays(pool, &relays);
-    crate::nostr::fetch_sealed(
+    client::fetch_sealed(
         &rows,
         event_id,
         locator,
