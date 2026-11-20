@@ -12,12 +12,12 @@ use super::RelaySocks;
 
 const HEAD_MAX: usize = 8 * 1024;
 
-pub(crate) enum PageError {
+pub enum PageError {
     Down,
     TooLarge,
 }
 
-pub(crate) fn fetch_http_page(
+pub fn fetch_http_page(
     page_url: &str,
     request: &str,
     deadline: Instant,

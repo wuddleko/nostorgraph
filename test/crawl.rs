@@ -1207,7 +1207,13 @@ fn a_pool_under_the_usable_floor_does_not_take_the_daily_pause() {
     let open = saved_document(include_str!("../test/nip11/open.json"));
     let mut alone = visited("wss://open.example", true, open.clone(), true);
     alone.next_try = NOW + 5 * 60;
-    save(&path, &Pool { rows: vec![alone.clone()] }).unwrap();
+    save(
+        &path,
+        &Pool {
+            rows: vec![alone.clone()],
+        },
+    )
+    .unwrap();
 
     assert_eq!(pass_wait(&path, Duration::ZERO, NOW), Duration::ZERO);
     assert_eq!(

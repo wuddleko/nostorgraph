@@ -49,7 +49,7 @@ fn seal_query_asks_for_the_event_id() {
 #[test]
 fn a_sealed_relay_event_is_returned_unchanged() {
     let locator = "0123456789abcdef0123";
-    let payload_max = crate::seal::sealed_payload_max(0, 0, 4);
+    let payload_max = sealed_payload_max(0, 0, 4);
     let content = v2_payload(locator, 2);
     assert!(content.len() <= payload_max);
     let note = sign_sealed_note(&content, locator, 1_700_000_000);
@@ -118,7 +118,7 @@ fn a_sealed_relay_event_is_returned_unchanged() {
 #[test]
 fn a_sealed_fetch_sizes_the_event_not_the_frame() {
     let locator = "0123456789abcdef0123";
-    let payload_max = crate::seal::sealed_payload_max(0, 0, 4);
+    let payload_max = sealed_payload_max(0, 0, 4);
     let note = sign_sealed_note(&v2_payload(locator, 2), locator, 1_700_000_000);
     let pretty = serde_json::to_string_pretty(
         &serde_json::from_str::<serde_json::Value>(&note.event_json).unwrap(),
@@ -162,7 +162,7 @@ fn a_sealed_fetch_sizes_the_event_not_the_frame() {
 #[test]
 fn a_sealed_event_matches_the_locator_when_no_id_is_required() {
     let locator = "0123456789abcdef0123";
-    let payload_max = crate::seal::sealed_payload_max(0, 0, 4);
+    let payload_max = sealed_payload_max(0, 0, 4);
     let note = sign_sealed_note(&v2_payload(locator, 2), locator, 1_700_000_000);
     let message = format!(r#"["EVENT","sub",{}]"#, note.event_json);
     let (created_at, event_json) =
@@ -187,7 +187,7 @@ fn a_sealed_fetch_keeps_the_requested_event() {
     let older = sign_sealed_note(&older_body, locator, 1_700_000_000);
     let newer = sign_sealed_note(&newer_body, locator, 1_800_000_000);
     let event_id = older.id_hex();
-    let payload_max = crate::seal::sealed_payload_max(128, 32, 256);
+    let payload_max = sealed_payload_max(128, 32, 256);
     let old_message = format!(r#"["EVENT","sub",{}]"#, older.event_json);
     let new_message = format!(r#"["EVENT","sub",{}]"#, newer.event_json);
     let old_json = note_for_query(&old_message, &event_id, locator, payload_max).unwrap();
@@ -228,7 +228,7 @@ fn a_title_tag_is_dropped_on_the_sealed_fetch_path() {
         &message,
         &titled.id_hex(),
         locator,
-        crate::seal::sealed_payload_max(128, 32, 256),
+        sealed_payload_max(128, 32, 256),
     )
     .is_none());
 }
@@ -1077,13 +1077,13 @@ fn fetch_nip11_reads_the_document_over_socks_and_classifies_it() {
     assert!(!request.contains("websocket"));
     assert_eq!(body.as_deref(), Some(open));
     let document: serde_json::Value = serde_json::from_str(open).unwrap();
-    assert!(crate::nip11::document_is_public(&document));
+    assert!(document_is_public(&document));
 
     let auth = include_str!("nip11/auth.json");
     let (body, _) = fetch_saved_nip11("wss://warm.example/path", &nip11_response("200 OK", auth));
     assert_eq!(body.as_deref(), Some(auth));
     let document: serde_json::Value = serde_json::from_str(auth).unwrap();
-    assert!(!crate::nip11::document_is_public(&document));
+    assert!(!document_is_public(&document));
 
     let (body, _) = fetch_saved_nip11(
         "wss://warm.example",
@@ -1091,7 +1091,7 @@ fn fetch_nip11_reads_the_document_over_socks_and_classifies_it() {
     );
     assert_eq!(body.as_deref(), Some("{}"));
     let document: serde_json::Value = serde_json::from_str("{}").unwrap();
-    assert!(crate::nip11::document_is_public(&document));
+    assert!(document_is_public(&document));
 }
 
 #[test]
@@ -1503,7 +1503,7 @@ fn sealed_note_from_json_checks_signature_stamp_tags_locator_and_size() {
     let (parsed, parsed_locator) = sealed_note_from_json(&value, 128, 32, 256_000).unwrap();
     assert_eq!(parsed.id, note.id);
     assert_eq!(parsed_locator, locator);
-    let payload_max = crate::seal::sealed_payload_max(0, 0, 1);
+    let payload_max = sealed_payload_max(0, 0, 1);
     let over = sign_sealed_note(&"x".repeat(payload_max + 1), locator, created_at);
     let over_value: serde_json::Value = serde_json::from_str(&over.event_json).unwrap();
     assert!(sealed_note_from_json(&over_value, 0, 0, 1).is_none());
@@ -1550,11 +1550,22 @@ fn sealed_note_from_json_checks_signature_stamp_tags_locator_and_size() {
         &keypair,
         created_at,
         kind,
-        &crate::seal::sealed_tags("0123456789ABCDEF0123", "1"),
+        &sealed_tags("0123456789ABCDEF0123", "1"),
         &content,
     );
     let uppercase_value: serde_json::Value = serde_json::from_str(&uppercase.event_json).unwrap();
     assert!(sealed_note_from_json(&uppercase_value, 128, 32, 256_000).is_none());
+}
+
+fn sealed_tags(locator: &str, nonce: &str) -> Vec<Vec<String>> {
+    vec![
+        vec!["d".to_string(), locator.to_string()],
+        vec![
+            "nonce".to_string(),
+            nonce.to_string(),
+            nostorgraph_nip44::POW_BITS.to_string(),
+        ],
+    ]
 }
 
 fn signed_without_enough_zero_bits(
@@ -1566,7 +1577,7 @@ fn signed_without_enough_zero_bits(
 ) -> SignedNote {
     let pubkey_hex = hex_encode(&keypair.x_only_public_key().0.serialize());
     for nonce in 0..1_000_000u32 {
-        let tags = crate::seal::sealed_tags(locator, &nonce.to_string());
+        let tags = sealed_tags(locator, &nonce.to_string());
         let id = nostorgraph_nip44::event_id(&pubkey_hex, created_at, kind, &tags, content);
         if matches!(
             nostorgraph_nip44::check_stamp(&id, &pubkey_hex, created_at, kind, &tags, content),

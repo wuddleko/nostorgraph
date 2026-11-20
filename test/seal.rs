@@ -188,26 +188,6 @@ fn seal_and_sign_does_not_log_the_secret_title_or_body() {
 
 #[test]
 fn sealed_payload_max_is_the_ciphertext_a_full_note_can_produce() {
-    let empty = serde_json::json!({
-        "title": "",
-        "author": "",
-        "content": "",
-        "locator": "",
-    })
-    .to_string();
-    assert_eq!(empty.len(), NOTE_JSON_SKELETON);
-
-    let key = [1u8; 32];
-    let nonce = [2u8; 32];
-    for len in [1usize, 32, 33, 65_535, 65_536] {
-        let payload = nostorgraph_nip44::encrypt(&"a".repeat(len), &key, &nonce).unwrap();
-        assert_eq!(
-            payload.len(),
-            nostorgraph_nip44::encrypted_len(len).unwrap(),
-            "{len}"
-        );
-    }
-
     let title_max = 8;
     let alias_max = 4;
     let content_max = 64;
@@ -215,17 +195,7 @@ fn sealed_payload_max_is_the_ciphertext_a_full_note_can_produce() {
     let author = "\u{1}".repeat(alias_max);
     let content = "\u{1}".repeat(content_max);
     let locator = "0123456789abcdef0123";
-    let json = serde_json::json!({
-        "title": title,
-        "author": author,
-        "content": content,
-        "locator": locator,
-    })
-    .to_string();
-    assert_eq!(
-        json.len(),
-        worst_note_json_len(title_max, alias_max, content_max).unwrap()
-    );
+    let nonce = [2u8; 32];
     let secret = [3u8; 32];
     let sealed_payload =
         nostorgraph_nip44::seal(&title, &author, &content, locator, &secret, &nonce).unwrap();

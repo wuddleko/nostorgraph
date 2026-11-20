@@ -9,7 +9,7 @@ use super::transport::{
     connect_deadline, connect_tcp, reap_held_relays, socks5_connect, store_held, tls_connector,
     tls_handshake, SOCKS_MISCONFIGURED,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 use super::{canonical_public_relay, same_public_relay, RelayFailure};
 use super::{public_relay_url, relay_socks, RelaySocks};
 
@@ -33,7 +33,14 @@ pub(super) fn assign_relay(
     let connector = tls_connector()?;
     let deadline = connect_deadline(deadline);
     let tcp = connect_tcp(proxy, deadline, None)?;
-    socks5_connect(&tcp, &host, port, &super::socks_username(relay), deadline, None)?;
+    socks5_connect(
+        &tcp,
+        &host,
+        port,
+        &super::socks_username(relay),
+        deadline,
+        None,
+    )?;
     let tls = tls_handshake(connector, &host, tcp, deadline, None)?;
     store_held(relay, tls);
     Ok(())
@@ -97,7 +104,7 @@ pub(super) fn relays_needing_assignment(
 }
 
 pub(super) type OpenRelay = Arc<dyn Fn(&str, Duration) + Send + Sync>;
-pub(crate) type ReadCircuits = Arc<dyn Fn() -> Option<HashMap<String, String>> + Send + Sync>;
+pub type ReadCircuits = Arc<dyn Fn() -> Option<HashMap<String, String>> + Send + Sync>;
 
 struct PendingAssignment {
     page: Vec<String>,
@@ -186,7 +193,7 @@ impl RelayPass {
 
     fn apply(&self, job: &PendingAssignment) {
         reap_held_relays();
-        let chosen = crate::relay_set::relays_to_assign(&job.page, &job.configured);
+        let chosen = relays_to_assign(&job.page, &job.configured);
         let paths = (job.circuits)();
         let noted = self.noted(&chosen, Instant::now());
         for relay in relays_needing_assignment(&chosen, paths.as_ref(), &noted) {
@@ -259,7 +266,7 @@ impl RelayPass {
             && self.latest.lock().expect("relay circuit pass").is_none()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     pub(super) fn remembers(&self, relay: &str) -> bool {
         let Some(key) = super::relay_key(relay) else {
             return false;
@@ -286,15 +293,32 @@ pub(super) fn shared_relay_pass() -> &'static Arc<RelayPass> {
     PASS.get_or_init(|| Arc::new(RelayPass::new()))
 }
 
-pub(crate) fn schedule_relay_assignments(
+pub fn relays_to_assign(page_relays: &[String], configured: &[String]) -> Vec<String> {
+    let mut relays = Vec::new();
+    for relay in page_relays.iter().chain(configured) {
+        if relays.len() == super::MAX_FETCH_RELAYS {
+            break;
+        }
+        let Some(relay) = super::canonical_public_relay(relay) else {
+            continue;
+        };
+        if relays.iter().any(|have| have == &relay) {
+            continue;
+        }
+        relays.push(relay);
+    }
+    relays
+}
+
+pub fn schedule_relay_assignments(
     page: Vec<String>,
     configured: Vec<String>,
     timeout: Duration,
     circuits: ReadCircuits,
 ) {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     if let Some(state) = watched_assignment() {
-        let chosen = crate::relay_set::relays_to_assign(&page, &configured);
+        let chosen = relays_to_assign(&page, &configured);
         *state.chosen.lock().expect("relay assignment watch") = chosen;
         let open: OpenRelay = Arc::new(|_: &str, _: Duration| {});
         state.pass.apply(&PendingAssignment {
@@ -309,31 +333,31 @@ pub(crate) fn schedule_relay_assignments(
     schedule_relay_assignments_via(page, configured, timeout, relay_socks(), circuits);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 struct AssignmentWatchState {
     pass: Arc<RelayPass>,
     chosen: Mutex<Vec<String>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 thread_local! {
     static ASSIGNMENT_WATCH: std::cell::RefCell<Option<Arc<AssignmentWatchState>>> =
         const { std::cell::RefCell::new(None) };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 fn watched_assignment() -> Option<Arc<AssignmentWatchState>> {
     ASSIGNMENT_WATCH.with(|slot| slot.borrow().clone())
 }
 
-#[cfg(test)]
-pub(crate) struct RelayAssignmentWatch {
+#[cfg(any(test, feature = "test-util"))]
+pub struct RelayAssignmentWatch {
     state: Arc<AssignmentWatchState>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl RelayAssignmentWatch {
-    pub(crate) fn begin(seed: &[&str]) -> Self {
+    pub fn begin(seed: &[&str]) -> Self {
         let pass = Arc::new(RelayPass::new());
         for relay in seed {
             pass.mark_requested(relay, Instant::now(), 1);
@@ -346,11 +370,11 @@ impl RelayAssignmentWatch {
         Self { state }
     }
 
-    pub(crate) fn remembers(&self, relay: &str) -> bool {
+    pub fn remembers(&self, relay: &str) -> bool {
         self.state.pass.remembers(relay)
     }
 
-    pub(crate) fn assigned(&self) -> Vec<String> {
+    pub fn assigned(&self) -> Vec<String> {
         self.state
             .chosen
             .lock()
@@ -359,16 +383,16 @@ impl RelayAssignmentWatch {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 struct RelayAnswerBook {
     notes: Mutex<HashMap<String, String>>,
     asked: Mutex<Vec<String>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 static RELAY_ANSWERS: Mutex<Option<Arc<RelayAnswerBook>>> = Mutex::new(None);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub(super) fn scripted_relay_answer(relay: &str) -> Option<Option<String>> {
     let book = RELAY_ANSWERS
         .lock()
@@ -387,12 +411,12 @@ pub(super) fn scripted_relay_answer(relay: &str) -> Option<Option<String>> {
     Some(found)
 }
 
-#[cfg(test)]
-pub(crate) struct RelayAnswer {
+#[cfg(any(test, feature = "test-util"))]
+pub struct RelayAnswer {
     book: Arc<RelayAnswerBook>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 struct PublishScriptBook {
     refused: Mutex<Vec<(String, String)>>,
     accepted: Mutex<Vec<String>>,
@@ -400,10 +424,10 @@ struct PublishScriptBook {
     panics: Mutex<Vec<String>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 static PUBLISH_SCRIPTS: Mutex<Option<Arc<PublishScriptBook>>> = Mutex::new(None);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub(super) fn scripted_send(relay: &str) -> Option<Result<(), RelayFailure>> {
     let book = PUBLISH_SCRIPTS
         .lock()
@@ -440,14 +464,14 @@ pub(super) fn scripted_send(relay: &str) -> Option<Result<(), RelayFailure>> {
     None
 }
 
-#[cfg(test)]
-pub(crate) struct PublishScript {
+#[cfg(any(test, feature = "test-util"))]
+pub struct PublishScript {
     book: Arc<PublishScriptBook>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl PublishScript {
-    pub(crate) fn begin() -> Self {
+    pub fn begin() -> Self {
         let book = Arc::new(PublishScriptBook {
             refused: Mutex::new(Vec::new()),
             accepted: Mutex::new(Vec::new()),
@@ -458,26 +482,26 @@ impl PublishScript {
         Self { book }
     }
 
-    pub(crate) fn refuse(&self, relay: &str) {
+    pub fn refuse(&self, relay: &str) {
         self.push_refusal(relay, "blocked: relay rejected the note");
     }
 
-    pub(crate) fn limit(&self, relay: &str) {
+    pub fn limit(&self, relay: &str) {
         self.push_refusal(relay, "rate-limited: slow down");
     }
 
-    pub(crate) fn time_out(&self, relay: &str) {
+    pub fn time_out(&self, relay: &str) {
         self.push_miss(relay, RelayFailure::TimedOut);
     }
 
-    pub(crate) fn disconnect(&self, relay: &str) {
+    pub fn disconnect(&self, relay: &str) {
         self.push_miss(
             relay,
             RelayFailure::Unreachable("connection refused".to_string()),
         );
     }
 
-    pub(crate) fn panic_on(&self, relay: &str) {
+    pub fn panic_on(&self, relay: &str) {
         let Some(url) = canonical_public_relay(relay) else {
             return;
         };
@@ -506,7 +530,7 @@ impl PublishScript {
             .push((url, failure));
     }
 
-    pub(crate) fn accept(&self, relay: &str) {
+    pub fn accept(&self, relay: &str) {
         let Some(url) = canonical_public_relay(relay) else {
             return;
         };
@@ -518,7 +542,7 @@ impl PublishScript {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl Drop for PublishScript {
     fn drop(&mut self) {
         let mut slot = PUBLISH_SCRIPTS.lock().expect("publish scripts");
@@ -531,9 +555,9 @@ impl Drop for PublishScript {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl RelayAnswer {
-    pub(crate) fn begin() -> Self {
+    pub fn begin() -> Self {
         let book = Arc::new(RelayAnswerBook {
             notes: Mutex::new(HashMap::new()),
             asked: Mutex::new(Vec::new()),
@@ -542,7 +566,7 @@ impl RelayAnswer {
         Self { book }
     }
 
-    pub(crate) fn answer(&self, relay: &str, note: &str) {
+    pub fn answer(&self, relay: &str, note: &str) {
         let Some(url) = canonical_public_relay(relay) else {
             return;
         };
@@ -553,7 +577,7 @@ impl RelayAnswer {
             .insert(url, note.to_string());
     }
 
-    pub(crate) fn asked(&self, relay: &str) -> bool {
+    pub fn asked(&self, relay: &str) -> bool {
         self.book
             .asked
             .lock()
@@ -563,7 +587,7 @@ impl RelayAnswer {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl Drop for RelayAnswer {
     fn drop(&mut self) {
         let mut slot = RELAY_ANSWERS.lock().expect("relay answers");
@@ -576,7 +600,7 @@ impl Drop for RelayAnswer {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 impl Drop for RelayAssignmentWatch {
     fn drop(&mut self) {
         ASSIGNMENT_WATCH.with(|slot| {

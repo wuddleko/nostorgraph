@@ -39,24 +39,7 @@ pub(crate) enum SealPlaintextError {
 
 pub(crate) const STAMP_ATTEMPTS: u32 = 1_000_000;
 
-const NOTE_JSON_SKELETON: usize = 50;
-const JSON_ESCAPE_EXPANSION: usize = 6;
-
-pub(crate) fn sealed_payload_max(title_max: usize, alias_max: usize, content_max: usize) -> usize {
-    worst_note_json_len(title_max, alias_max, content_max)
-        .and_then(nostorgraph_nip44::encrypted_len)
-        .map(|len| len.min(nostorgraph_nip44::MAX_PAYLOAD_CHARS))
-        .unwrap_or(nostorgraph_nip44::MAX_PAYLOAD_CHARS)
-}
-
-fn worst_note_json_len(title_max: usize, alias_max: usize, content_max: usize) -> Option<usize> {
-    let expanded = |len: usize| len.checked_mul(JSON_ESCAPE_EXPANSION);
-    NOTE_JSON_SKELETON
-        .checked_add(expanded(title_max)?)?
-        .checked_add(expanded(alias_max)?)?
-        .checked_add(expanded(content_max)?)?
-        .checked_add(nostorgraph_nip44::LOCATOR_LEN)
-}
+pub(crate) use client::sealed_payload_max;
 
 pub(crate) struct MinedStamp {
     pub id: [u8; 32],

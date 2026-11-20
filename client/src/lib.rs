@@ -13,9 +13,12 @@ use secp256k1::{Keypair, Message, XOnlyPublicKey, SECP256K1};
 mod assign;
 mod nip11;
 mod page_http;
+mod payload;
 mod transport;
 
-pub(crate) use page_http::{fetch_http_page, PageError};
+pub use nip11::document_is_public;
+pub use page_http::{fetch_http_page, PageError};
+pub use payload::sealed_payload_max;
 
 use transport::{
     arm_stream, connect_relay, open_relay_socket, read_incoming, wait_budget, Incoming,
@@ -27,21 +30,24 @@ use transport::{
     use_invalid_test_certs, CONNECT_LIMIT, HELD_RELAY_LIMIT, SOCKS_MISCONFIGURED,
 };
 
-pub(crate) use assign::schedule_relay_assignments;
+pub use assign::relays_to_assign;
+pub use assign::schedule_relay_assignments;
 #[cfg(test)]
 use assign::{
     assign_relay, assignment_due, next_misses, relay_needs_assignment, relays_needing_assignment,
-    schedule_relay_assignments_via, scripted_relay_answer, scripted_send, shared_relay_pass,
-    OpenRelay, ReadCircuits, RelayPass, ASSIGN_LIMIT, ASSIGN_WINDOW,
+    schedule_relay_assignments_via, shared_relay_pass, OpenRelay, ReadCircuits, RelayPass,
+    ASSIGN_LIMIT, ASSIGN_WINDOW,
 };
-#[cfg(test)]
-pub(crate) use assign::{PublishScript, RelayAnswer, RelayAssignmentWatch};
+#[cfg(any(test, feature = "test-util"))]
+use assign::{scripted_relay_answer, scripted_send};
+#[cfg(any(test, feature = "test-util"))]
+pub use assign::{PublishScript, RelayAnswer, RelayAssignmentWatch};
 
-pub(crate) use nip11::fetch_nip11;
+pub use nip11::fetch_nip11;
 #[cfg(test)]
 use nip11::{decode_http_message, NIP11_BODY_MAX};
 
-pub(crate) const MAX_FETCH_RELAYS: usize = 6;
+pub const MAX_FETCH_RELAYS: usize = 6;
 const ID_MATCH: usize = 1;
 const SEALED_EVENT_OVERHEAD: usize = 8192;
 const SEALED_FRAME_OVERHEAD: usize = 1024;
@@ -60,34 +66,53 @@ impl SignedNote {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub fn sign_sealed_note(content: &str, locator: &str, created_at: i64) -> SignedNote {
     let keypair = Keypair::new(SECP256K1, &mut thread_rng());
     let pubkey_hex = hex_encode(&keypair.x_only_public_key().0.serialize());
-    let mined = crate::seal::mine_stamp(
-        &pubkey_hex,
-        created_at,
-        locator,
-        content,
-        crate::seal::STAMP_ATTEMPTS,
-    )
-    .expect("no stamp in range");
+    let (created_at, tags) = mine_test_stamp(&pubkey_hex, created_at, locator, content);
     signed_event(
         &keypair,
-        mined.created_at,
+        created_at,
         nostorgraph_nip44::KIND,
-        &mined.tags,
+        &tags,
         content,
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
+fn mine_test_stamp(
+    pubkey_hex: &str,
+    created_at: i64,
+    locator: &str,
+    content: &str,
+) -> (i64, Vec<Vec<String>>) {
+    let kind = nostorgraph_nip44::KIND;
+    for counter in 0..1_000_000 {
+        let tags = vec![
+            vec!["d".to_string(), locator.to_string()],
+            vec![
+                "nonce".to_string(),
+                counter.to_string(),
+                nostorgraph_nip44::POW_BITS.to_string(),
+            ],
+        ];
+        let id = nostorgraph_nip44::event_id(pubkey_hex, created_at, kind, &tags, content);
+        if nostorgraph_nip44::check_stamp(&id, pubkey_hex, created_at, kind, &tags, content).is_ok()
+        {
+            return (created_at, tags);
+        }
+    }
+    panic!("no stamp in range");
+}
+
+#[cfg(any(test, feature = "test-util"))]
 fn v2_payload(locator: &str, mark: u8) -> String {
     nostorgraph_nip44::seal("Title", "", "body", locator, &[1u8; 32], &[mark; 32])
         .expect("v2 payload")
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-util"))]
 pub fn sign_v2_note(locator: &str, created_at: i64) -> SignedNote {
     sign_sealed_note(&v2_payload(locator, 2), locator, created_at)
 }
@@ -106,11 +131,11 @@ pub fn set_relay_socks(setting: RelaySocks) {
     *RELAY_SOCKS.lock().expect("relay socks lock") = setting;
 }
 
-pub(crate) fn relay_url_username(url: &str) -> String {
+pub fn relay_url_username(url: &str) -> String {
     url.to_string()
 }
 
-pub(crate) fn set_socks_username(choose: fn(&str) -> String) {
+pub fn set_socks_username(choose: fn(&str) -> String) {
     *SOCKS_USERNAME.lock().expect("socks username") = choose;
 }
 
@@ -123,7 +148,7 @@ fn relay_socks() -> RelaySocks {
     *RELAY_SOCKS.lock().expect("relay socks lock")
 }
 
-pub(crate) fn relays_use_proxy() -> bool {
+pub fn relays_use_proxy() -> bool {
     matches!(relay_socks(), RelaySocks::Proxy(_))
 }
 
@@ -133,10 +158,7 @@ pub fn sealed_note_from_json(
     alias_max: usize,
     content_max: usize,
 ) -> Option<(SignedNote, String)> {
-    sealed_note_capped(
-        value,
-        crate::seal::sealed_payload_max(title_max, alias_max, content_max),
-    )
+    sealed_note_capped(value, sealed_payload_max(title_max, alias_max, content_max))
 }
 
 fn sealed_note_capped(
@@ -192,10 +214,10 @@ fn stamp_locator(tags: &[Vec<String>]) -> Option<String> {
 pub struct PublishedRelays {
     pub accepted: Vec<String>,
     pub refused: Vec<String>,
-    pub(crate) missed: Vec<RelayAttempt>,
+    pub missed: Vec<RelayAttempt>,
 }
 
-pub(crate) struct RelayAttempt {
+pub struct RelayAttempt {
     pub relay: String,
     pub result: Result<(), RelayFailure>,
 }
@@ -209,7 +231,7 @@ pub fn publish_to_relays(
 }
 
 #[derive(Clone)]
-pub(crate) enum RelayFailure {
+pub enum RelayFailure {
     TimedOut,
     Unreachable(String),
     Rejected(String),
@@ -231,7 +253,7 @@ impl RelayFailure {
         }
     }
 
-    pub(crate) fn report(&self) -> &str {
+    pub fn report(&self) -> &str {
         match self {
             Self::TimedOut => "timed out",
             Self::Unreachable(reason) | Self::Rejected(reason) => reason,
@@ -359,7 +381,7 @@ fn send_event(
     deadline: Instant,
     public_only: bool,
 ) -> Result<(), RelayFailure> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     if let Some(result) = scripted_send(relay) {
         return result;
     }
@@ -431,12 +453,12 @@ fn probe_from_ok(message: &str, event_id_hex: &str) -> Option<crawler::ProbeResu
     Some(probe_result(sent))
 }
 
-pub(crate) fn probe_kind(
+pub fn probe_kind(
     relay: &str,
     document: Option<&serde_json::Value>,
     deadline: Instant,
 ) -> Vec<crawler::ProbeResult> {
-    if !document.is_some_and(crate::nip11::document_is_public) {
+    if !document.is_some_and(document_is_public) {
         return Vec::new();
     }
     let note = minimal_probe_note(now_secs());
@@ -455,7 +477,7 @@ pub fn fetch_sealed(
     content_max: usize,
     timeout: Duration,
 ) -> Option<String> {
-    let payload_max = crate::seal::sealed_payload_max(title_max, alias_max, content_max);
+    let payload_max = sealed_payload_max(title_max, alias_max, content_max);
     Some(fetch_from_relays(
         relays,
         event_id_hex,
@@ -562,7 +584,7 @@ fn note_id(event_json: &str) -> Option<String> {
     Some(value.get("id")?.as_str()?.to_string())
 }
 
-pub(crate) struct RelayList {
+pub struct RelayList {
     pub socket_answered: bool,
     pub urls: Vec<String>,
 }
@@ -629,7 +651,7 @@ fn event_for_sub(frame: &str, sub_id: &str) -> Option<String> {
     Some(event.get().to_string())
 }
 
-pub(crate) fn read_relay_list(relay: &str, deadline: Instant, socks: RelaySocks) -> RelayList {
+pub fn read_relay_list(relay: &str, deadline: Instant, socks: RelaySocks) -> RelayList {
     let mut socket = match connect_relay(relay, deadline, None, true, socks) {
         Ok(socket) => socket,
         Err(_) => return ListRead::unanswered().finish(),
@@ -679,7 +701,7 @@ fn fetch_from_relay(
     deadline: Instant,
     cancel: &AtomicBool,
 ) -> Result<Option<String>, String> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-util"))]
     if let Some(answer) = scripted_relay_answer(relay) {
         return Ok(answer);
     }
@@ -746,6 +768,7 @@ fn relay_has_no_event(message: &str, sub_id: &str) -> bool {
     items.get(1).and_then(|item| item.as_str()) == Some(sub_id)
 }
 
+#[cfg(test)]
 fn sealed_from_relay_message(
     message: &str,
     event_id: &str,
@@ -809,14 +832,14 @@ fn limit_sealed_socket<Stream>(socket: &mut tungstenite::WebSocket<Stream>, cont
     limit_socket(socket, sealed_frame_max(content_max));
 }
 
-pub(crate) fn sealed_locator(locator: &str) -> bool {
+pub fn sealed_locator(locator: &str) -> bool {
     locator.len() == nostorgraph_nip44::LOCATOR_LEN
         && locator
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-pub(crate) fn relay_key(url: &str) -> Option<String> {
+pub fn relay_key(url: &str) -> Option<String> {
     let rest = url
         .get(6..)
         .filter(|_| url[..6].eq_ignore_ascii_case("wss://"))?;
@@ -834,14 +857,14 @@ pub(crate) fn relay_key(url: &str) -> Option<String> {
     Some(format!("wss://{host}{tail}"))
 }
 
-pub(crate) fn sealed_event_id(event_id: &str) -> bool {
+pub fn sealed_event_id(event_id: &str) -> bool {
     event_id.len() == 64
         && event_id
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-pub(crate) fn decode_fixed_hex<const N: usize>(hex: &str) -> Option<[u8; N]> {
+pub fn decode_fixed_hex<const N: usize>(hex: &str) -> Option<[u8; N]> {
     if hex.len() != N * 2 || !hex.is_ascii() {
         return None;
     }
@@ -853,18 +876,18 @@ pub(crate) fn decode_fixed_hex<const N: usize>(hex: &str) -> Option<[u8; N]> {
     Some(out)
 }
 
-pub(crate) fn canonical_public_relay(relay: &str) -> Option<String> {
+pub fn canonical_public_relay(relay: &str) -> Option<String> {
     crawler::canonical_public_relay(relay)
 }
 
-pub(crate) fn same_public_relay(left: &str, right: &str) -> bool {
+pub fn same_public_relay(left: &str, right: &str) -> bool {
     matches!(
         (canonical_public_relay(left), canonical_public_relay(right)),
         (Some(left), Some(right)) if left == right
     )
 }
 
-pub(crate) fn public_relay_url(relay: &str) -> bool {
+pub fn public_relay_url(relay: &str) -> bool {
     canonical_public_relay(relay).is_some()
 }
 
@@ -880,7 +903,7 @@ fn public_relay_addresses(addresses: Vec<SocketAddr>) -> Result<Vec<SocketAddr>,
     }
 }
 
-pub(crate) fn signed_event(
+pub fn signed_event(
     keypair: &Keypair,
     created_at: i64,
     kind: u32,
@@ -1009,7 +1032,7 @@ fn verify_sig(parsed: &ParsedEvent) -> bool {
         .is_ok()
 }
 
-pub(crate) fn now_secs() -> i64 {
+pub fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
@@ -1022,7 +1045,7 @@ fn random_hex(bytes: usize) -> String {
     hex_encode(&raw)
 }
 
-pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+pub fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {

@@ -634,7 +634,14 @@ pub(super) fn with_relay_tls<T>(
     let connector = tls_connector()?;
     if let Some(proxy) = proxy {
         let tcp = connect_tcp(proxy, deadline, cancel)?;
-        socks5_connect(&tcp, &host, port, &super::socks_username(relay), deadline, cancel)?;
+        socks5_connect(
+            &tcp,
+            &host,
+            port,
+            &super::socks_username(relay),
+            deadline,
+            cancel,
+        )?;
         let tls = tls_handshake(connector, &host, tcp, deadline, cancel)?;
         return use_tls(tls);
     }

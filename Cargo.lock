@@ -243,6 +243,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "client"
+version = "0.1.0"
+dependencies = [
+ "bech32",
+ "crawler",
+ "libc",
+ "native-tls",
+ "nostorgraph-nip44",
+ "rand 0.8.8",
+ "secp256k1",
+ "serde_json",
+ "serial_test",
+ "socket2 0.5.10",
+ "tungstenite",
+ "url",
+]
+
+[[package]]
 name = "cookie"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1206,13 +1224,12 @@ name = "nostorgraph"
 version = "0.1.0"
 dependencies = [
  "ammonia",
- "bech32",
  "chrono",
+ "client",
  "crawler",
  "hmac",
  "libc",
  "log",
- "native-tls",
  "nostorgraph-nip44",
  "nostorgraph-parser",
  "rand 0.8.8",
@@ -1222,10 +1239,8 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sha2",
- "socket2 0.5.10",
  "tempfile",
  "toml",
- "tungstenite",
  "url",
  "wasm-bindgen-cli-support",
 ]

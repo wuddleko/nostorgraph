@@ -314,7 +314,7 @@ fn visit_outcome(visit: &Visit) -> &'static str {
         return "did not answer";
     }
     match visit.nip11.as_ref() {
-        Some(document) if crate::nip11::document_is_public(document) => {}
+        Some(document) if client::document_is_public(document) => {}
         Some(_) => return "is not public",
         None => return "sent no relay document",
     }
@@ -590,7 +590,7 @@ fn row_is_usable(row: &Row) -> bool {
     let Some(document) = visit.nip11.as_ref() else {
         return false;
     };
-    if !crate::nip11::document_is_public(document) {
+    if !client::document_is_public(document) {
         return false;
     }
     let name = nostorgraph_nip44::KIND.to_string();

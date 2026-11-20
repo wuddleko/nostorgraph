@@ -27,14 +27,3 @@ pub(crate) fn public_relays(urls: &[String]) -> Vec<String> {
     }
     relays
 }
-
-pub(crate) fn relays_to_assign(page_relays: &[String], configured: &[String]) -> Vec<String> {
-    let mut relays = Vec::new();
-    for relay in page_relays {
-        push_public_relay(&mut relays, relay);
-    }
-    for relay in configured {
-        push_public_relay(&mut relays, relay);
-    }
-    relays
-}
