@@ -115,7 +115,7 @@ install-docker-compose:
 
 # Install only the ntgraph command into Cargo's bin directory.
 cli:
-	cargo install --path . --bin ntgraph
+	cargo install --path ntgraph
 
 # Production targets
 build: check-docker

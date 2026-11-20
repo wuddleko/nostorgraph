@@ -1,8 +1,9 @@
 const POST_CSS: &str = include_str!("../../templates/post.css");
 
 pub(super) fn render(note: &nostorgraph_nip44::Note) -> Result<String, String> {
-    let config = crate::config::Config::load()?;
-    let options = crate::render_options(&config);
+    let config = super::settings::Settings::load()?;
+    let mut options = nostorgraph_parser::RenderOptions::default();
+    options.syntax_theme = config.syntax_theme;
     let body = nostorgraph_parser::render_markdown_with_config(&note.content, &options);
     let title = nostorgraph_parser::html_escape(&note.title);
     let byline = if note.author.is_empty() {

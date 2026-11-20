@@ -1228,7 +1228,6 @@ dependencies = [
  "client",
  "crawler",
  "hmac",
- "libc",
  "log",
  "nostorgraph-nip44",
  "nostorgraph-parser",
@@ -1283,6 +1282,22 @@ version = "0.1.0"
 dependencies = [
  "pdf",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "ntgraph"
+version = "0.1.0"
+dependencies = [
+ "client",
+ "crawler",
+ "libc",
+ "nostorgraph-nip44",
+ "nostorgraph-parser",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+ "url",
 ]
 
 [[package]]

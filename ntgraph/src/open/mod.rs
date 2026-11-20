@@ -2,6 +2,7 @@ mod browse;
 mod document;
 mod link;
 mod note;
+mod settings;
 mod source;
 
 pub fn run() -> i32 {

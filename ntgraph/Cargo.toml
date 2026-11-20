@@ -1,0 +1,22 @@
+[package]
+name = "ntgraph"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+client = { path = "../client" }
+crawler = { path = "../crawler" }
+nostorgraph-nip44 = { path = "../nip44" }
+nostorgraph-parser = { path = "../parser" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+url = "2.4"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+client = { path = "../client", features = ["test-util"] }
+tempfile = "3"

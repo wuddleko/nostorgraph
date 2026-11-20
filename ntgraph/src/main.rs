@@ -1,4 +1,6 @@
+mod open;
+
 fn main() {
-    let code = nostorgraph::open::run();
+    let code = open::run();
     std::process::exit(code);
 }

@@ -6,7 +6,6 @@ pub(crate) mod config;
 mod crawl;
 pub(crate) mod csrf;
 pub(crate) use client as nostr;
-pub mod open;
 mod pages;
 pub(crate) mod relay_set;
 pub(crate) mod relays;

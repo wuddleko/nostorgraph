@@ -1,6 +1,7 @@
 use url::Url;
 
 use super::link::{Link, Target};
+use super::settings::Settings;
 
 #[derive(Debug)]
 pub(super) struct Loaded {
@@ -9,18 +10,18 @@ pub(super) struct Loaded {
 }
 
 pub(super) fn load(link: &Link) -> Result<Loaded, Error> {
-    let config = crate::config::Config::load().map_err(Error::Config)?;
+    let config = Settings::load().map_err(Error::Config)?;
     load_with(&config, link)
 }
 
-fn load_with(config: &crate::config::Config, link: &Link) -> Result<Loaded, Error> {
+fn load_with(config: &Settings, link: &Link) -> Result<Loaded, Error> {
     let socks = match config.socks_addr() {
-        Ok(Some(addr)) => crate::nostr::RelaySocks::Proxy(addr),
-        Ok(None) => crate::nostr::RelaySocks::Direct,
+        Ok(Some(addr)) => client::RelaySocks::Proxy(addr),
+        Ok(None) => client::RelaySocks::Direct,
         Err(()) => return Err(Error::Socks),
     };
-    crate::nostr::set_relay_socks(socks);
-    crate::nostr::set_socks_username(crate::nostr::relay_url_username);
+    client::set_relay_socks(socks);
+    client::set_socks_username(client::relay_url_username);
     match &link.target {
         Target::Long {
             locator,
@@ -30,14 +31,14 @@ fn load_with(config: &crate::config::Config, link: &Link) -> Result<Loaded, Erro
             if relays.is_empty() {
                 return Err(Error::Relays);
             }
-            let event = crate::nostr::fetch_sealed(
+            let event = client::fetch_sealed(
                 relays,
                 event_id,
                 locator,
-                config.limits.title_max_length,
-                config.limits.alias_max_length,
-                config.limits.content_max_length,
-                crate::relay_set::relay_timeout(config),
+                config.title_max,
+                config.alias_max,
+                config.content_max,
+                config.timeout(),
             )
             .ok_or(Error::Relays)?;
             Ok(Loaded {
@@ -51,32 +52,29 @@ fn load_with(config: &crate::config::Config, link: &Link) -> Result<Loaded, Erro
 }
 
 fn fetch_host(
-    config: &crate::config::Config,
-    socks: crate::nostr::RelaySocks,
+    config: &Settings,
+    socks: client::RelaySocks,
     origin: &str,
     segment: &str,
     link: &Link,
 ) -> Result<Loaded, Error> {
-    if host_is_onion(origin) && !matches!(socks, crate::nostr::RelaySocks::Proxy(_)) {
+    if host_is_onion(origin) && !matches!(socks, client::RelaySocks::Proxy(_)) {
         return Err(Error::Fetch(
             "An onion host needs [nostr].socks.".to_string(),
         ));
     }
     let request = page_request(origin, segment);
     let page = page_target(origin, segment);
-    let deadline = std::time::Instant::now() + crate::relay_set::relay_timeout(config);
-    let max_body = crate::seal::sealed_payload_max(
-        config.limits.title_max_length,
-        config.limits.alias_max_length,
-        config.limits.content_max_length,
-    )
-    .saturating_add(PAGE_SHELL);
-    let html = match crate::nostr::fetch_http_page(&page, &request, deadline, max_body, socks) {
+    let deadline = std::time::Instant::now() + config.timeout();
+    let max_body =
+        client::sealed_payload_max(config.title_max, config.alias_max, config.content_max)
+            .saturating_add(PAGE_SHELL);
+    let html = match client::fetch_http_page(&page, &request, deadline, max_body, socks) {
         Ok(html) => html,
-        Err(crate::nostr::PageError::TooLarge) => {
+        Err(client::PageError::TooLarge) => {
             return Err(Error::Fetch("The page is too large.".to_string()));
         }
-        Err(crate::nostr::PageError::Down) => {
+        Err(client::PageError::Down) => {
             return Err(Error::Fetch("The page did not respond.".to_string()));
         }
     };
@@ -130,17 +128,13 @@ fn read_marks(html: &str) -> Result<PageMarks, MarkError> {
         serde_json::from_str(events).map_err(|_| MarkError::Json)?;
     let locator = match element_text(html, "sealed-locator") {
         None => None,
-        Some(locator) if crate::nostr::sealed_locator(locator) => Some(locator.to_string()),
+        Some(locator) if client::sealed_locator(locator) => Some(locator.to_string()),
         Some(_) => return Err(MarkError::Locator),
     };
     Ok(PageMarks { events, locator })
 }
 
-fn event_from_page(
-    link: &Link,
-    html: &str,
-    config: &crate::config::Config,
-) -> Result<(String, String), Error> {
+fn event_from_page(link: &Link, html: &str, config: &Settings) -> Result<(String, String), Error> {
     let marks = read_marks(html).map_err(|_| Error::Page)?;
     let wanted = match &link.target {
         Target::Short { locator, .. } => locator.clone(),
@@ -148,11 +142,11 @@ fn event_from_page(
         Target::Long { .. } => return Err(Error::Shape),
     };
     for event in &marks.events {
-        let Some((_, locator)) = crate::nostr::sealed_note_from_json(
+        let Some((_, locator)) = client::sealed_note_from_json(
             event,
-            config.limits.title_max_length,
-            config.limits.alias_max_length,
-            config.limits.content_max_length,
+            config.title_max,
+            config.alias_max,
+            config.content_max,
         ) else {
             continue;
         };
@@ -215,7 +209,7 @@ impl std::fmt::Display for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::open::settings::Settings;
 
     fn long_link(relays: &[&str]) -> Link {
         Link {
@@ -236,7 +230,7 @@ mod tests {
 
     #[test]
     fn an_empty_relay_list_fails_before_a_fetch() {
-        let error = load_with(&Config::default(), &long_link(&[])).unwrap_err();
+        let error = load_with(&Settings::default(), &long_link(&[])).unwrap_err();
         assert_eq!(error.to_string(), "The relays did not return this note.");
     }
 
@@ -301,7 +295,7 @@ mod tests {
 
     #[test]
     fn the_first_matching_event_is_kept() {
-        let config = Config::default();
+        let config = Settings::default();
         let right = signed_event(LOCATOR, "hello");
         let other = signed_event(OTHER, "nope");
         let array = serde_json::to_string(&vec![other, right.clone()]).expect("array");
@@ -351,7 +345,7 @@ mod tests {
     fn signed_event(locator: &str, body: &str) -> serde_json::Value {
         let payload = nostorgraph_nip44::seal("Title", "Ada", body, locator, &[7; 32], &[9; 32])
             .expect("seal");
-        let note = crate::nostr::sign_sealed_note(&payload, locator, 1_700_000_000);
+        let note = client::sign_sealed_note(&payload, locator, 1_700_000_000);
         serde_json::from_str(&note.event_json).expect("event json")
     }
 
@@ -384,7 +378,7 @@ mod tests {
                 locator: "0123456789abcdef0123".to_string(),
             },
         };
-        let error = load_with(&Config::default(), &link).unwrap_err();
+        let error = load_with(&Settings::default(), &link).unwrap_err();
         assert_eq!(error.to_string(), "An onion host needs [nostr].socks.");
     }
 
@@ -396,8 +390,8 @@ mod tests {
             serde_json::to_string(&vec![event.clone()]).expect("array")
         );
         let (origin, seen) = serve_once(200, &body);
-        let mut config = Config::default();
-        config.nostr.timeout_secs = 3;
+        let mut config = Settings::default();
+        config.timeout_secs = 3;
         let loaded = load_with(&config, &short_at(&origin)).expect("page");
         assert_eq!(loaded.locator, "0123456789abcdef0123");
         let kept: serde_json::Value = serde_json::from_str(&loaded.event).expect("event");
@@ -462,8 +456,8 @@ mod tests {
 
     #[test]
     fn a_bad_socks_address_fails_before_a_fetch() {
-        let mut config = Config::default();
-        config.nostr.socks = "not-a-socket".to_string();
+        let mut config = Settings::default();
+        config.socks = "not-a-socket".to_string();
         let error = load_with(&config, &long_link(&["wss://relay.damus.io"])).unwrap_err();
         assert_eq!(
             error.to_string(),

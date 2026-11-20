@@ -56,7 +56,7 @@ pub(super) fn parse(input: &str) -> Result<Link, Error> {
     }
     let target = match segments.as_slice() {
         [locator, event_id] => {
-            if !crate::nostr::sealed_locator(locator) || !crate::nostr::sealed_event_id(event_id) {
+            if !client::sealed_locator(locator) || !client::sealed_event_id(event_id) {
                 return Err(Error::Path);
             }
             Target::Long {
@@ -65,7 +65,7 @@ pub(super) fn parse(input: &str) -> Result<Link, Error> {
                 relays: relays(&url),
             }
         }
-        [locator] if crate::nostr::sealed_locator(locator) => Target::Short {
+        [locator] if client::sealed_locator(locator) => Target::Short {
             origin,
             locator: locator.clone(),
         },
