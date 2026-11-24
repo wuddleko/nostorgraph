@@ -143,13 +143,39 @@ jobs:
           cd release
           Compress-Archive -Path * -DestinationPath "../nostorgraph-${env:RELEASE_TAG}-${{ matrix.target }}${{ matrix.archive-suffix }}"
 
+      - name: Prepare ntgraph archive (Linux)
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p ntgraph-release
+          cp target/${{ matrix.target }}/release/ntgraph ntgraph-release/ntgraph
+          tar -czf "ntgraph-${RELEASE_TAG}-${{ matrix.target }}${{ matrix.archive-suffix }}" -C ntgraph-release ntgraph
+
+      - name: Prepare ntgraph archive (macOS)
+        if: runner.os == 'macOS'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p ntgraph-release
+          cp target/${{ matrix.target }}/release/ntgraph ntgraph-release/ntgraph
+          (
+            cd ntgraph-release
+            zip -r "../ntgraph-${RELEASE_TAG}-${{ matrix.target }}${{ matrix.archive-suffix }}" ntgraph
+          )
+
       - name: Upload release assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "$RELEASE_TAG" "./nostorgraph-${RELEASE_TAG}-${{ matrix.target }}${{ matrix.archive-suffix }}" --clobber
+          assets=("./nostorgraph-${RELEASE_TAG}-${{ matrix.target }}${{ matrix.archive-suffix }}")
+          ntgraph="./ntgraph-${RELEASE_TAG}-${{ matrix.target }}${{ matrix.archive-suffix }}"
+          if [ -f "$ntgraph" ]; then
+            assets+=("$ntgraph")
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
   create-combined-build-info:
     name: Create Combined Build Info
