@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 
+#[cfg(test)]
 pub(crate) fn post_description(raw: &str) -> String {
     let Some((end, _)) = raw.char_indices().nth(160) else {
         return raw.to_string();

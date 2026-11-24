@@ -57,6 +57,7 @@ pub(crate) fn write_relay_cookie(list: &RelayCookie) -> String {
         .unwrap_or_else(|_| serde_json::to_string(&RelayCookie::empty()).expect("empty relay list"))
 }
 
+#[cfg(test)]
 pub(crate) fn relays_page_html(path: &Path, configured: &[String]) -> String {
     relays_page_html_with_csrf(path, "", configured)
 }

@@ -76,6 +76,7 @@ fn sealed_key_box() -> &'static str {
 </div>"
 }
 
+#[cfg(test)]
 pub(crate) fn sealed_shell(events: &[String], config: &Config) -> String {
     sealed_shell_for(events, config, None)
 }

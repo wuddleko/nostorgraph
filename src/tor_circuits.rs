@@ -79,6 +79,7 @@ fn built_circuits(reply: &str) -> Vec<BuiltCircuit> {
     circuits
 }
 
+#[cfg(test)]
 pub(crate) fn paths_by_relay(reply: &str) -> HashMap<String, String> {
     stabilize(built_circuits(reply), &HashMap::new()).0
 }

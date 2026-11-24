@@ -32,6 +32,7 @@ pub(crate) struct SealedPlaintext {
 
 #[derive(Debug)]
 pub(crate) enum SealPlaintextError {
+    #[cfg_attr(not(test), allow(dead_code))]
     Seal(nostorgraph_nip44::Error),
     TooLong,
     Stamp,
@@ -42,6 +43,7 @@ pub(crate) const STAMP_ATTEMPTS: u32 = 1_000_000;
 pub(crate) use client::sealed_payload_max;
 
 pub(crate) struct MinedStamp {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub id: [u8; 32],
     pub created_at: i64,
     pub tags: Vec<Vec<String>>,

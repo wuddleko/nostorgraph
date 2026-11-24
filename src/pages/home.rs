@@ -94,6 +94,7 @@ struct HomeDraft<'a> {
     typed_relay: &'a str,
 }
 
+#[cfg(test)]
 pub(super) fn home_context(
     config: &Config,
     nojs: bool,
@@ -350,6 +351,7 @@ fn csrf_failure(config: &Config, field: &str, cookie: &str) -> Option<&'static s
     }
 }
 
+#[cfg(test)]
 pub(crate) fn create_location(form: &NewPost, config: &Config, csrf_cookie: &str) -> String {
     create_location_with_cookie(form, config, csrf_cookie, None)
 }
@@ -385,6 +387,7 @@ pub(super) struct NojsPublished {
     pub(super) accepted: Vec<String>,
     pub(super) locator: String,
     pub(super) event_id: String,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) payload: String,
     pub(super) k: String,
 }
@@ -492,6 +495,7 @@ pub(super) fn long_seal_href(
     })
 }
 
+#[cfg(test)]
 pub(super) fn short_seal_href(locator: &str, key: &str) -> String {
     super::layout::seal_href(&super::layout::SealAddress {
         locator,
