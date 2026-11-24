@@ -53,7 +53,7 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build binary
-        run: cargo build --locked --release --target ${{ matrix.target }}
+        run: cargo build --locked --release --target ${{ matrix.target }} -p nostorgraph -p ntgraph
 
       - name: Get OS info (Linux/macOS)
         if: runner.os != 'Windows'
